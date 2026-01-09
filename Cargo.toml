@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "palmietopia-core",
+    "palmietopia-server"
+]
+resolver = "2"

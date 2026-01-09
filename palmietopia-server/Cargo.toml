@@ -1,0 +1,10 @@
+[package]
+name = "palmietopia-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+palmietopia-core = { path = "../palmietopia-core" }
+
+axum = "0.8.8"
+tokio = { version = "1.49.0", features = ["full"] }
