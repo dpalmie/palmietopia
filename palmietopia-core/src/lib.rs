@@ -303,23 +303,6 @@ impl GameSession {
         positions
     }
 
-    fn find_adjacent_land_tile(map: &GameMap, q: i32, r: i32) -> Option<(i32, i32)> {
-        let neighbors = [
-            (q + 1, r), (q - 1, r),
-            (q, r + 1), (q, r - 1),
-            (q + 1, r - 1), (q - 1, r + 1),
-        ];
-        
-        for (nq, nr) in neighbors {
-            if let Some(tile) = map.tiles.iter().find(|t| t.q == nq && t.r == nr) {
-                if tile.terrain != Terrain::Water && tile.terrain != Terrain::Mountain {
-                    return Some((nq, nr));
-                }
-            }
-        }
-        None
-    }
-
     pub fn hex_distance(q1: i32, r1: i32, q2: i32, r2: i32) -> i32 {
         ((q1 - q2).abs() + (r1 - r2).abs() + (q1 + r1 - q2 - r2).abs()) / 2
     }

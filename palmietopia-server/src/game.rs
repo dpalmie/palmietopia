@@ -295,11 +295,6 @@ impl GameManager {
         Ok((unit, player_gold))
     }
 
-    pub fn get_channel(&self, game_id: &str) -> Option<broadcast::Sender<String>> {
-        let _ = game_id;
-        None
-    }
-
     pub async fn get_channel_async(&self, game_id: &str) -> Option<broadcast::Sender<String>> {
         let games = self.active_games.read().await;
         games.get(game_id).map(|g| g.channel.clone())
