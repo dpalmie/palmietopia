@@ -104,6 +104,9 @@ impl Lobby {
 
 // ============ Game Session ============
 
+pub const DEFAULT_BASE_TIME_MS: u64 = 120_000; // 2 minutes
+pub const DEFAULT_INCREMENT_MS: u64 = 45_000;  // 45 seconds
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum GameStatus {
     InProgress,
@@ -117,18 +120,43 @@ pub struct GameSession {
     pub players: Vec<Player>,
     pub current_turn: usize,
     pub status: GameStatus,
+    pub player_times_ms: Vec<u64>,  // Time bank for each player
+    pub turn_started_at_ms: u64,
+    pub base_time_ms: u64,
+    pub increment_ms: u64,
 }
 
 impl GameSession {
     pub fn from_lobby(lobby: &Lobby) -> Self {
         let map = GameMap::generate(lobby.map_size.radius());
+        let player_count = lobby.players.len();
         Self {
             id: lobby.id.clone(),
             map,
             players: lobby.players.clone(),
             current_turn: 0,
             status: GameStatus::InProgress,
+            player_times_ms: vec![DEFAULT_BASE_TIME_MS; player_count], // Each player starts with base time
+            turn_started_at_ms: 0, // Set by server when game starts
+            base_time_ms: DEFAULT_BASE_TIME_MS,
+            increment_ms: DEFAULT_INCREMENT_MS,
         }
+    }
+
+    /// End the current player's turn. time_used_ms is how long they took.
+    pub fn end_current_turn(&mut self, time_used_ms: u64) {
+        let current = self.current_turn;
+        // Subtract time used, add increment (chess clock style)
+        self.player_times_ms[current] = self.player_times_ms[current]
+            .saturating_sub(time_used_ms)
+            .saturating_add(self.increment_ms);
+        // Advance to next player
+        self.current_turn = (current + 1) % self.players.len();
+    }
+
+    /// Get the current player's remaining time
+    pub fn current_player_time(&self) -> u64 {
+        self.player_times_ms[self.current_turn]
     }
 }
 
@@ -142,17 +170,23 @@ pub enum ClientMessage {
     LeaveLobby,
     StartGame,
     ListLobbies,
+    EndTurn { game_id: String, player_id: String },
+    RejoinGame { game_id: String, player_id: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
     LobbyCreated { lobby_id: String, player_id: String },
+    JoinedLobby { lobby: Lobby, player_id: String },
     LobbyUpdated { lobby: Lobby },
     LobbyList { lobbies: Vec<Lobby> },
     GameStarted { game: GameSession },
+    GameRejoined { game: GameSession },
     PlayerLeft { player_id: String },
     Error { message: String },
+    TurnChanged { current_turn: usize, player_times_ms: Vec<u64> },
+    TimeTick { player_index: usize, remaining_ms: u64 },
 }
 
 /// Terrain types for map tiles

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
+use crate::game::GameManager;
 use crate::store::GameStore;
 
 pub type Tx = broadcast::Sender<String>;
@@ -10,12 +11,14 @@ pub type Tx = broadcast::Sender<String>;
 pub struct PlayerConnection {
     pub player_id: String,
     pub lobby_id: Option<String>,
+    pub game_id: Option<String>,
 }
 
 pub struct AppState {
     pub store: Arc<dyn GameStore>,
     pub connections: RwLock<HashMap<String, PlayerConnection>>,
     pub lobby_channels: RwLock<HashMap<String, Tx>>,
+    pub game_manager: Arc<GameManager>,
 }
 
 impl AppState {
@@ -24,6 +27,7 @@ impl AppState {
             store,
             connections: RwLock::new(HashMap::new()),
             lobby_channels: RwLock::new(HashMap::new()),
+            game_manager: Arc::new(GameManager::new()),
         }
     }
 

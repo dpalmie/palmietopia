@@ -1,3 +1,4 @@
+mod game;
 mod state;
 mod store;
 mod ws;

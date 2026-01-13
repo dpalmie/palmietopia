@@ -16,6 +16,8 @@ pub async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let mut current_lobby_id: Option<String> = None;
     let mut lobby_rx: Option<broadcast::Receiver<String>> = None;
 
+    let mut current_game_id: Option<String> = None;
+
     // Register connection
     {
         let mut connections = state.connections.write().await;
@@ -24,6 +26,7 @@ pub async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             crate::state::PlayerConnection {
                 player_id: player_id.clone(),
                 lobby_id: None,
+                game_id: None,
             },
         );
     }
@@ -40,6 +43,7 @@ pub async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                     client_msg,
                                     &player_id,
                                     &mut current_lobby_id,
+                                    &mut current_game_id,
                                     &mut lobby_rx,
                                     &state,
                                 ).await;
@@ -90,6 +94,7 @@ async fn handle_client_message(
     msg: ClientMessage,
     player_id: &str,
     current_lobby_id: &mut Option<String>,
+    current_game_id: &mut Option<String>,
     lobby_rx: &mut Option<broadcast::Receiver<String>>,
     state: &Arc<AppState>,
 ) -> Option<ServerMessage> {
@@ -225,8 +230,9 @@ async fn handle_client_message(
             };
             let _ = tx.send(serde_json::to_string(&update_msg).unwrap());
 
-            Some(ServerMessage::LobbyUpdated {
+            Some(ServerMessage::JoinedLobby {
                 lobby: updated_lobby,
+                player_id: player_id.to_string(),
             })
         }
 
@@ -277,8 +283,12 @@ async fn handle_client_message(
                 });
             }
 
-            // Create game session
-            let game = GameSession::from_lobby(&lobby);
+            // Create game session with timestamp
+            let mut game = GameSession::from_lobby(&lobby);
+            game.turn_started_at_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
 
             // Update lobby status
             let mut updated_lobby = lobby;
@@ -288,12 +298,66 @@ async fn handle_client_message(
             // Save game
             let _ = state.store.save_game(game.clone()).await;
 
-            // Broadcast game start to all players
+            // Get channel and start the game with timer
             let tx = state.get_or_create_lobby_channel(&lobby_id).await;
+            state.game_manager.start_game(game.clone(), tx.clone()).await;
+
+            // Set current game ID
+            *current_game_id = Some(game.id.clone());
+
+            // Broadcast game start to all players
             let start_msg = ServerMessage::GameStarted { game: game.clone() };
             let _ = tx.send(serde_json::to_string(&start_msg).unwrap());
 
             Some(ServerMessage::GameStarted { game })
+        }
+
+        ClientMessage::EndTurn { game_id, player_id: msg_player_id } => {
+            tracing::info!("EndTurn received: game_id={}, player_id={}", game_id, msg_player_id);
+            match state.game_manager.end_turn(&game_id, &msg_player_id).await {
+                Ok(game) => {
+                    tracing::info!("EndTurn succeeded");
+                    // Return TurnChanged directly (broadcast also sent to subscribed clients)
+                    Some(ServerMessage::TurnChanged {
+                        current_turn: game.current_turn,
+                        player_times_ms: game.player_times_ms.clone(),
+                    })
+                }
+                Err(e) => {
+                    tracing::error!("EndTurn failed: {}", e);
+                    Some(ServerMessage::Error { message: e })
+                }
+            }
+        }
+
+        ClientMessage::RejoinGame { game_id, player_id: msg_player_id } => {
+            tracing::info!("RejoinGame received: game_id={}, player_id={}", game_id, msg_player_id);
+            
+            // Get the game
+            let game = match state.game_manager.get_game(&game_id).await {
+                Some(g) => g,
+                None => {
+                    return Some(ServerMessage::Error {
+                        message: "Game not found".to_string(),
+                    });
+                }
+            };
+
+            // Verify player is in this game
+            if !game.players.iter().any(|p| p.id == msg_player_id) {
+                return Some(ServerMessage::Error {
+                    message: "You are not in this game".to_string(),
+                });
+            }
+
+            // Subscribe to game's broadcast channel
+            if let Some(tx) = state.game_manager.get_channel_async(&game_id).await {
+                *lobby_rx = Some(tx.subscribe());
+                *current_game_id = Some(game_id.clone());
+                tracing::info!("Player {} rejoined game {}", msg_player_id, game_id);
+            }
+
+            Some(ServerMessage::GameRejoined { game })
         }
     }
 }

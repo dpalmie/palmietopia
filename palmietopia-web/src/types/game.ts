@@ -32,6 +32,10 @@ export interface GameSession {
   players: Player[];
   current_turn: number;
   status: string;
+  turn_time_remaining_ms: number;
+  turn_started_at_ms: number;
+  base_time_ms: number;
+  increment_ms: number;
 }
 
 export const MAP_SIZE_INFO: Record<MapSize, { radius: number; tiles: number; description: string }> = {
