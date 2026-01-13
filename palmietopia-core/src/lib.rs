@@ -649,8 +649,8 @@ impl GameSession {
         let mut attacker_new_q = None;
         let mut attacker_new_r = None;
         
-        if defender_died && !attacker_died {
-            // Move attacker to defender's position
+        if defender_died && !attacker_died && distance == 1 {
+            // Move attacker to defender's position (melee only)
             if let Some(attacker) = self.units.iter_mut().find(|u| u.id == attacker_id) {
                 attacker.q = defender_pos.0;
                 attacker.r = defender_pos.1;
