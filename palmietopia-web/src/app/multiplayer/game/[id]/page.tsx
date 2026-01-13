@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { HexGrid } from "@/components/HexGrid";
-import { useWebSocket, GameSession } from "@/hooks/useWebSocket";
+import { useWebSocket, GameSession, Unit } from "@/hooks/useWebSocket";
 import { PLAYER_COLORS } from "@/types/game";
 
 function formatTime(ms: number): string {
@@ -12,6 +12,21 @@ function formatTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+function hexDistance(q1: number, r1: number, q2: number, r2: number): number {
+  return (Math.abs(q1 - q2) + Math.abs(r1 - r2) + Math.abs(q1 + r1 - q2 - r2)) / 2;
+}
+
+function getAdjacentTiles(q: number, r: number): { q: number; r: number }[] {
+  return [
+    { q: q + 1, r },
+    { q: q - 1, r },
+    { q, r: r + 1 },
+    { q, r: r - 1 },
+    { q: q + 1, r: r - 1 },
+    { q: q - 1, r: r + 1 },
+  ];
+}
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -19,18 +34,19 @@ export default function GamePage() {
 
   const {
     isConnected,
-    playerId,
     game,
     turnTimeRemaining,
     endTurn,
     rejoinGame,
+    moveUnit,
   } = useWebSocket();
 
   const [initialGame, setInitialGame] = useState<GameSession | null>(null);
   const [localTimeRemaining, setLocalTimeRemaining] = useState<number>(0);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [highlightedTiles, setHighlightedTiles] = useState<{ q: number; r: number }[]>([]);
 
-  // Load initial game and player ID from sessionStorage
   useEffect(() => {
     const storedGame = sessionStorage.getItem(`game-${gameId}`);
     const storedPlayerId = sessionStorage.getItem(`player-${gameId}`);
@@ -48,7 +64,6 @@ export default function GamePage() {
     }
   }, [gameId]);
 
-  // Rejoin game when connected and we have player ID
   useEffect(() => {
     if (isConnected && myPlayerId && gameId) {
       console.log("Rejoining game:", { gameId, myPlayerId });
@@ -56,10 +71,8 @@ export default function GamePage() {
     }
   }, [isConnected, myPlayerId, gameId, rejoinGame]);
 
-  // Use live game state if available, otherwise use initial
   const currentGame = game || initialGame;
 
-  // Initialize localTimeRemaining when game loads (per-player time)
   useEffect(() => {
     if (currentGame) {
       const currentPlayerTime = currentGame.player_times_ms[currentGame.current_turn];
@@ -67,18 +80,15 @@ export default function GamePage() {
     }
   }, [currentGame]);
 
-  // Client-side countdown timer based on turn_started_at_ms
   useEffect(() => {
     if (!currentGame) return;
     
     const updateTimer = () => {
       const now = Date.now();
-      // Fallback: if turn_started_at_ms is 0/missing, assume turn just started
       const startTime = currentGame.turn_started_at_ms > 0 
         ? currentGame.turn_started_at_ms 
         : now;
       const elapsed = now - startTime;
-      // Use current player's time bank
       const currentPlayerTime = currentGame.player_times_ms[currentGame.current_turn];
       const remaining = Math.max(0, currentPlayerTime - elapsed);
       setLocalTimeRemaining(remaining);
@@ -89,6 +99,91 @@ export default function GamePage() {
     return () => clearInterval(interval);
   }, [currentGame?.turn_started_at_ms, currentGame?.current_turn, currentGame]);
 
+  // Calculate valid movement tiles for selected unit
+  const calculateMovementTiles = useCallback((unit: Unit) => {
+    if (!currentGame) return [];
+    
+    const validTiles: { q: number; r: number }[] = [];
+    const adjacent = getAdjacentTiles(unit.q, unit.r);
+    
+    for (const pos of adjacent) {
+      const tile = currentGame.map.tiles.find(t => t.q === pos.q && t.r === pos.r);
+      if (!tile) continue;
+      
+      // Check terrain passability and cost
+      let cost = 0;
+      if (tile.terrain === "Water") continue;
+      if (tile.terrain === "Mountain") cost = 2;
+      else cost = 1;
+      
+      if (unit.movement_remaining >= cost) {
+        // Check if tile is occupied by another unit
+        const occupied = (currentGame.units || []).some(u => u.q === pos.q && u.r === pos.r);
+        if (!occupied) {
+          validTiles.push(pos);
+        }
+      }
+    }
+    
+    return validTiles;
+  }, [currentGame]);
+
+  const handleUnitClick = useCallback((unitId: string) => {
+    if (!currentGame || !myPlayerId) return;
+    
+    const unit = (currentGame.units || []).find(u => u.id === unitId);
+    if (!unit) return;
+    
+    // Can only select own units on your turn
+    const currentPlayer = currentGame.players[currentGame.current_turn];
+    if (currentPlayer.id !== myPlayerId || unit.owner_id !== myPlayerId) {
+      setSelectedUnitId(null);
+      setHighlightedTiles([]);
+      return;
+    }
+    
+    if (selectedUnitId === unitId) {
+      // Deselect
+      setSelectedUnitId(null);
+      setHighlightedTiles([]);
+    } else {
+      // Select and show movement options
+      setSelectedUnitId(unitId);
+      setHighlightedTiles(calculateMovementTiles(unit));
+    }
+  }, [currentGame, myPlayerId, selectedUnitId, calculateMovementTiles]);
+
+  const handleTileClick = useCallback((q: number, r: number) => {
+    if (!selectedUnitId || !myPlayerId || !currentGame) return;
+    
+    // Check if this tile is in highlighted (valid move) tiles
+    const isValidMove = highlightedTiles.some(t => t.q === q && t.r === r);
+    if (!isValidMove) {
+      // Deselect if clicking invalid tile
+      setSelectedUnitId(null);
+      setHighlightedTiles([]);
+      return;
+    }
+    
+    // Move the unit
+    moveUnit(gameId, myPlayerId, selectedUnitId, q, r);
+    setSelectedUnitId(null);
+    setHighlightedTiles([]);
+  }, [selectedUnitId, myPlayerId, currentGame, highlightedTiles, gameId, moveUnit]);
+
+  // Update highlighted tiles when game state changes
+  useEffect(() => {
+    if (selectedUnitId && currentGame) {
+      const unit = (currentGame.units || []).find(u => u.id === selectedUnitId);
+      if (unit) {
+        setHighlightedTiles(calculateMovementTiles(unit));
+      } else {
+        setSelectedUnitId(null);
+        setHighlightedTiles([]);
+      }
+    }
+  }, [currentGame?.units, selectedUnitId, calculateMovementTiles]);
+
   const handleLeaveGame = () => {
     sessionStorage.removeItem(`game-${gameId}`);
     router.push("/multiplayer");
@@ -98,8 +193,8 @@ export default function GamePage() {
     if (myPlayerId) {
       console.log("Ending turn:", { gameId, myPlayerId });
       endTurn(gameId, myPlayerId);
-    } else {
-      console.error("Cannot end turn: myPlayerId is null");
+      setSelectedUnitId(null);
+      setHighlightedTiles([]);
     }
   };
 
@@ -129,9 +224,7 @@ export default function GamePage() {
   }
 
   const currentPlayer = currentGame.players[currentGame.current_turn];
-  // Use stored player ID (from when we joined the lobby) instead of new WebSocket's player ID
   const isMyTurn = currentPlayer?.id === myPlayerId;
-  // Use server time if available, otherwise local calculation
   const timeRemaining = turnTimeRemaining || localTimeRemaining;
   const isLowTime = timeRemaining < 30000;
 
@@ -141,16 +234,14 @@ export default function GamePage() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-50">Palmietopia</h1>
           <p className="text-sm text-zinc-400">
-            {currentGame.map.tiles.length} tiles • {currentGame.players.length} players
+            {currentGame.map.tiles.length} tiles • {currentGame.players.length} players • {currentGame.cities?.length || 0} cities • {currentGame.units?.length || 0} units
           </p>
         </div>
         <div className="flex items-center gap-4">
-          {/* Timer */}
           <div className={`text-2xl font-mono font-bold ${isLowTime ? "text-red-500" : "text-zinc-50"}`}>
             {formatTime(timeRemaining)}
           </div>
           
-          {/* End Turn Button */}
           <button
             onClick={handleEndTurn}
             disabled={!isMyTurn}
@@ -172,7 +263,6 @@ export default function GamePage() {
         </div>
       </header>
 
-      {/* Player bar */}
       <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-700 flex items-center gap-4">
         {currentGame.players.map((player, index) => {
           const isCurrentTurn = index === currentGame.current_turn;
@@ -201,8 +291,25 @@ export default function GamePage() {
         })}
       </div>
 
+      {/* Instructions */}
+      {isMyTurn && (
+        <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm text-center">
+          Your turn! Click a unit to select it, then click a highlighted tile to move.
+        </div>
+      )}
+
       <main className="flex-1 overflow-hidden">
-        <HexGrid map={currentGame.map} hexSize={40} />
+        <HexGrid 
+          map={currentGame.map} 
+          hexSize={40}
+          cities={currentGame.cities || []}
+          units={currentGame.units || []}
+          players={currentGame.players}
+          selectedUnitId={selectedUnitId}
+          highlightedTiles={highlightedTiles}
+          onTileClick={handleTileClick}
+          onUnitClick={handleUnitClick}
+        />
       </main>
     </div>
   );

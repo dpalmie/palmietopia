@@ -78,6 +78,7 @@ impl GameManager {
         let msg = ServerMessage::TurnChanged {
             current_turn: active_game.game.current_turn,
             player_times_ms: active_game.game.player_times_ms.clone(),
+            units: active_game.game.units.clone(),
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
@@ -89,9 +90,46 @@ impl GameManager {
         games.get(game_id).map(|g| g.game.clone())
     }
 
+    pub async fn move_unit(&self, game_id: &str, player_id: &str, unit_id: &str, to_q: i32, to_r: i32) -> Result<u32, String> {
+        tracing::info!("move_unit called: game_id={}, player_id={}, unit_id={}", game_id, player_id, unit_id);
+        
+        let mut games = self.active_games.write().await;
+        let active_game = games.get_mut(game_id).ok_or_else(|| {
+            tracing::error!("Game not found: {}", game_id);
+            "Game not found".to_string()
+        })?;
+
+        // Verify it's this player's turn
+        let current_player = &active_game.game.players[active_game.game.current_turn];
+        if current_player.id != player_id {
+            tracing::error!("Not your turn: expected={}, got={}", current_player.id, player_id);
+            return Err("Not your turn".to_string());
+        }
+
+        // Verify the unit belongs to the player
+        let unit = active_game.game.units.iter().find(|u| u.id == unit_id)
+            .ok_or("Unit not found")?;
+        if unit.owner_id != player_id {
+            return Err("Not your unit".to_string());
+        }
+
+        // Perform the move (validates and updates position)
+        let movement_remaining = active_game.game.move_unit(unit_id, to_q, to_r)?;
+
+        // Broadcast the move to all players
+        let msg = ServerMessage::UnitMoved {
+            unit_id: unit_id.to_string(),
+            to_q,
+            to_r,
+            movement_remaining,
+        };
+        let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
+
+        Ok(movement_remaining)
+    }
+
     pub fn get_channel(&self, game_id: &str) -> Option<broadcast::Sender<String>> {
-        // This needs to be sync for use in ws handler
-        // We'll handle this differently
+        let _ = game_id;
         None
     }
 
@@ -146,6 +184,7 @@ async fn run_game_timer(game_id: String, games: Arc<RwLock<HashMap<String, Activ
                     let turn_msg = ServerMessage::TurnChanged {
                         current_turn: active_game.game.current_turn,
                         player_times_ms: active_game.game.player_times_ms.clone(),
+                        units: active_game.game.units.clone(),
                     };
                     let _ = active_game.channel.send(serde_json::to_string(&turn_msg).unwrap());
                 }

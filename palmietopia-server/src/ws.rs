@@ -321,6 +321,7 @@ async fn handle_client_message(
                     Some(ServerMessage::TurnChanged {
                         current_turn: game.current_turn,
                         player_times_ms: game.player_times_ms.clone(),
+                        units: game.units.clone(),
                     })
                 }
                 Err(e) => {
@@ -358,6 +359,27 @@ async fn handle_client_message(
             }
 
             Some(ServerMessage::GameRejoined { game })
+        }
+
+        ClientMessage::MoveUnit { game_id, player_id: msg_player_id, unit_id, to_q, to_r } => {
+            tracing::info!("MoveUnit received: game_id={}, player_id={}, unit_id={}, to=({},{})", 
+                game_id, msg_player_id, unit_id, to_q, to_r);
+            
+            match state.game_manager.move_unit(&game_id, &msg_player_id, &unit_id, to_q, to_r).await {
+                Ok(movement_remaining) => {
+                    tracing::info!("MoveUnit succeeded, movement_remaining={}", movement_remaining);
+                    Some(ServerMessage::UnitMoved {
+                        unit_id,
+                        to_q,
+                        to_r,
+                        movement_remaining,
+                    })
+                }
+                Err(e) => {
+                    tracing::error!("MoveUnit failed: {}", e);
+                    Some(ServerMessage::Error { message: e })
+                }
+            }
         }
     }
 }

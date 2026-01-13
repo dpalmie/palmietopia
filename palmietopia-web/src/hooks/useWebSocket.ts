@@ -29,13 +29,32 @@ export interface GameMap {
   radius: number;
 }
 
+export interface City {
+  id: string;
+  owner_id: string;
+  q: number;
+  r: number;
+  name: string;
+}
+
+export interface Unit {
+  id: string;
+  owner_id: string;
+  unit_type: string;
+  q: number;
+  r: number;
+  movement_remaining: number;
+}
+
 export interface GameSession {
   id: string;
   map: GameMap;
   players: Player[];
+  cities: City[];
+  units: Unit[];
   current_turn: number;
   status: string;
-  player_times_ms: number[];  // Time bank for each player
+  player_times_ms: number[];
   turn_started_at_ms: number;
   base_time_ms: number;
   increment_ms: number;
@@ -50,8 +69,9 @@ export type ServerMessage =
   | { type: "GameRejoined"; game: GameSession }
   | { type: "PlayerLeft"; player_id: string }
   | { type: "Error"; message: string }
-  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[] }
-  | { type: "TimeTick"; player_index: number; remaining_ms: number };
+  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; units: Unit[] }
+  | { type: "TimeTick"; player_index: number; remaining_ms: number }
+  | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number };
 
 export type ClientMessage =
   | { type: "CreateLobby"; player_name: string; map_size: MapSize }
@@ -60,7 +80,8 @@ export type ClientMessage =
   | { type: "StartGame" }
   | { type: "ListLobbies" }
   | { type: "EndTurn"; game_id: string; player_id: string }
-  | { type: "RejoinGame"; game_id: string; player_id: string };
+  | { type: "RejoinGame"; game_id: string; player_id: string }
+  | { type: "MoveUnit"; game_id: string; player_id: string; unit_id: string; to_q: number; to_r: number };
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001/ws";
 
@@ -141,10 +162,10 @@ export function useWebSocket() {
                 ...prev, 
                 current_turn: msg.current_turn,
                 player_times_ms: msg.player_times_ms,
-                turn_started_at_ms: Date.now(), // Reset timer start
+                units: msg.units,
+                turn_started_at_ms: Date.now(),
               } : null
             );
-            // Set time for new current player
             setTurnTimeRemaining(msg.player_times_ms[msg.current_turn]);
             break;
           case "TimeTick":
@@ -154,6 +175,20 @@ export function useWebSocket() {
                 setTurnTimeRemaining(msg.remaining_ms);
               }
               return prev;
+            });
+            break;
+          case "UnitMoved":
+            console.log("UnitMoved received:", msg);
+            setGame((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                units: prev.units.map((u) =>
+                  u.id === msg.unit_id
+                    ? { ...u, q: msg.to_q, r: msg.to_r, movement_remaining: msg.movement_remaining }
+                    : u
+                ),
+              };
             });
             break;
           case "PlayerLeft":
@@ -215,6 +250,11 @@ export function useWebSocket() {
     send({ type: "RejoinGame", game_id: gameId, player_id: playerId });
   }, [send]);
 
+  const moveUnit = useCallback((gameId: string, playerId: string, unitId: string, toQ: number, toR: number) => {
+    console.log("Sending MoveUnit:", { gameId, playerId, unitId, toQ, toR });
+    send({ type: "MoveUnit", game_id: gameId, player_id: playerId, unit_id: unitId, to_q: toQ, to_r: toR });
+  }, [send]);
+
   return {
     isConnected,
     playerId,
@@ -230,6 +270,7 @@ export function useWebSocket() {
     listLobbies,
     endTurn,
     rejoinGame,
+    moveUnit,
     setError,
     setCurrentLobby,
     setGame,
