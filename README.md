@@ -146,28 +146,50 @@ Each city can produce **1 unit per turn**:
 | Unit | Cost |
 |------|------|
 | Conscript | 25 gold |
+| Knight | 40 gold |
+| Bowman | 25 gold |
 
 **Strategic Note:** Since units start in your Capitol, you must move your starting unit out before you can produce more. This creates an early-game decision between defending (garrisoned unit) and expanding (producing more units).
 
 ## Units
 
-### Conscript (Basic Warrior)
+Palmietopia features three unit types with distinct roles and stats:
 
-The Conscript is the most basic military unit available at game start.
+| Unit | Cost | HP | Attack | Defense | Movement | Range |
+|------|------|-----|--------|---------|----------|-------|
+| Conscript | 25g | 50 | 25 | 15 | 2 | 1 |
+| Knight | 40g | 50 | 35 | 10 | 3 | 1 |
+| Bowman | 25g | 40 | 22 | 10 | 2 | 2 |
 
-| Stat | Value |
-|------|-------|
-| Cost | 25 gold |
-| HP | 50 |
-| Attack | 25 |
-| Defense | 15 |
-| Movement | 2 tiles per turn |
+### Conscript (Basic Infantry)
 
-**Movement Rules:**
+The Conscript is the balanced starting unit - solid stats across the board.
+
+- **Role:** Frontline infantry, good for holding positions
 - Each player starts with **1 Conscript** in their Capitol city
-- Movement resets to full (2) at the start of each player's turn
+
+### Knight (Cavalry)
+
+The Knight is a fast, hard-hitting unit with lower defense.
+
+- **Role:** Flanking and pursuit, high damage but fragile
+- **Movement:** 3 tiles per turn allows fast repositioning
+- **Tradeoff:** Lower defense (10) means they die quickly in prolonged fights
+
+### Bowman (Ranged)
+
+The Bowman can attack from 2 tiles away and receives no counterattack at range.
+
+- **Role:** Support unit, safe chip damage from distance
+- **Range:** Can attack at distance 1 or 2
+- **Key mechanic:** Attacks at distance 2 receive **NO counterattack**
+- **Tradeoff:** Lower HP (40) and defense (10) makes them vulnerable if caught
+
+### Movement Rules
+
+- Movement resets to full at the start of each player's turn
 - Moving to Grassland, Forest, or Desert costs **1 movement**
-- Moving to Mountain costs **2 movement** (can only move 1 tile per turn on mountains)
+- Moving to Mountain costs **2 movement**
 - **Cannot move to Water tiles** at all
 - Cannot move to tiles occupied by other units
 
@@ -187,10 +209,21 @@ Palmietopia uses a **Civilization V inspired** combat system where both attacker
 
 When Unit A attacks Unit B:
 1. **A deals damage to B**: `A.attack × 30 ÷ (30 + B.effective_defense)`
-2. **B counterattacks A**: `B.attack × 30 ÷ (30 + A.defense) × 0.5`
+2. **B counterattacks A**: `B.attack × 30 ÷ (30 + A.defense) × 0.5` *(melee only)*
 3. If either unit reaches 0 HP, they are removed from the game
 4. If defender dies, attacker moves to their tile
 5. Attacking consumes **all remaining movement**
+
+### Ranged Combat
+
+Bowmen can attack at range 2 with a special benefit:
+- **Melee attacks (distance 1):** Normal counterattack applies
+- **Ranged attacks (distance 2):** **NO counterattack** - the defender cannot fight back
+
+This makes Bowmen excellent for:
+- Softening up targets before melee engagement
+- Finishing off low-HP enemies safely
+- Kiting enemies (attack, move away, repeat)
 
 ### Garrison Bonus
 

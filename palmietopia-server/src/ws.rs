@@ -435,6 +435,8 @@ async fn handle_client_message(
             // Parse unit type
             let parsed_unit_type = match unit_type.as_str() {
                 "Conscript" => palmietopia_core::UnitType::Conscript,
+                "Knight" => palmietopia_core::UnitType::Knight,
+                "Bowman" => palmietopia_core::UnitType::Bowman,
                 _ => return Some(ServerMessage::Error { message: "Invalid unit type".to_string() }),
             };
             

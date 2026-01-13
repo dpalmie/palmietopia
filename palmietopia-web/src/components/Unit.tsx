@@ -31,7 +31,6 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
         stroke={ownerColor}
         strokeWidth={isSelected ? "3" : "2"}
       />
-      
       {/* Head */}
       <circle
         cx={x}
@@ -41,7 +40,6 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
         stroke={ownerColor}
         strokeWidth="1.5"
       />
-      
       {/* Helmet */}
       <ellipse
         cx={x}
@@ -50,7 +48,6 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
         ry={s * 0.25}
         fill="#4a4a4a"
       />
-      
       {/* Spear */}
       <line
         x1={x + s * 0.5}
@@ -67,7 +64,6 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
                  ${x + s * 0.4},${y - s * 1.5}`}
         fill="#9E9E9E"
       />
-      
       {/* Shield emblem (owner color) */}
       <circle
         cx={x}
@@ -75,6 +71,147 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
         r={s * 0.25}
         fill={ownerColor}
         opacity="0.8"
+      />
+    </g>
+  );
+
+  const renderKnight = () => (
+    <g>
+      {/* Horse body */}
+      <ellipse
+        cx={x}
+        cy={y + s * 0.3}
+        rx={s * 0.9}
+        ry={s * 0.5}
+        fill="#8B4513"
+        stroke={ownerColor}
+        strokeWidth={isSelected ? "3" : "2"}
+      />
+      {/* Horse head */}
+      <ellipse
+        cx={x + s * 0.7}
+        cy={y - s * 0.1}
+        rx={s * 0.3}
+        ry={s * 0.4}
+        fill="#8B4513"
+        stroke={ownerColor}
+        strokeWidth="1.5"
+      />
+      {/* Rider body */}
+      <ellipse
+        cx={x - s * 0.1}
+        cy={y - s * 0.3}
+        rx={s * 0.35}
+        ry={s * 0.5}
+        fill="#4a4a4a"
+        stroke={ownerColor}
+        strokeWidth="1.5"
+      />
+      {/* Rider head */}
+      <circle
+        cx={x - s * 0.1}
+        cy={y - s * 0.8}
+        r={s * 0.25}
+        fill="#D2B48C"
+        stroke={ownerColor}
+        strokeWidth="1"
+      />
+      {/* Helmet plume */}
+      <ellipse
+        cx={x - s * 0.1}
+        cy={y - s * 1.0}
+        rx={s * 0.15}
+        ry={s * 0.25}
+        fill={ownerColor}
+      />
+      {/* Lance */}
+      <line
+        x1={x + s * 0.2}
+        y1={y + s * 0.5}
+        x2={x + s * 0.8}
+        y2={y - s * 1.3}
+        stroke="#5D4037"
+        strokeWidth="3"
+      />
+      {/* Lance tip */}
+      <polygon
+        points={`${x + s * 0.8},${y - s * 1.3} 
+                 ${x + s * 0.7},${y - s * 1.6} 
+                 ${x + s * 0.9},${y - s * 1.6}`}
+        fill="#C0C0C0"
+      />
+    </g>
+  );
+
+  const renderBowman = () => (
+    <g>
+      {/* Body */}
+      <ellipse
+        cx={x}
+        cy={y + s * 0.2}
+        rx={s * 0.5}
+        ry={s * 0.7}
+        fill="#228B22"
+        stroke={ownerColor}
+        strokeWidth={isSelected ? "3" : "2"}
+      />
+      {/* Head */}
+      <circle
+        cx={x}
+        cy={y - s * 0.5}
+        r={s * 0.3}
+        fill="#D2B48C"
+        stroke={ownerColor}
+        strokeWidth="1.5"
+      />
+      {/* Hood */}
+      <path
+        d={`M ${x - s * 0.35} ${y - s * 0.4} 
+            Q ${x} ${y - s * 1.0} ${x + s * 0.35} ${y - s * 0.4}`}
+        fill="#228B22"
+        stroke={ownerColor}
+        strokeWidth="1"
+      />
+      {/* Bow */}
+      <path
+        d={`M ${x - s * 0.6} ${y - s * 0.8} 
+            Q ${x - s * 1.0} ${y + s * 0.2} ${x - s * 0.6} ${y + s * 1.0}`}
+        fill="none"
+        stroke="#8B4513"
+        strokeWidth="3"
+      />
+      {/* Bowstring */}
+      <line
+        x1={x - s * 0.6}
+        y1={y - s * 0.8}
+        x2={x - s * 0.6}
+        y2={y + s * 1.0}
+        stroke="#ccc"
+        strokeWidth="1"
+      />
+      {/* Arrow */}
+      <line
+        x1={x - s * 0.5}
+        y1={y + s * 0.1}
+        x2={x + s * 0.5}
+        y2={y + s * 0.1}
+        stroke="#5D4037"
+        strokeWidth="2"
+      />
+      {/* Arrow tip */}
+      <polygon
+        points={`${x + s * 0.5},${y + s * 0.1} 
+                 ${x + s * 0.7},${y + s * 0.0} 
+                 ${x + s * 0.7},${y + s * 0.2}`}
+        fill="#9E9E9E"
+      />
+      {/* Owner color badge */}
+      <circle
+        cx={x}
+        cy={y + s * 0.2}
+        r={s * 0.15}
+        fill={ownerColor}
+        opacity="0.9"
       />
     </g>
   );
@@ -99,6 +236,8 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
       )}
       
       {unitType === "Conscript" && renderConscript()}
+      {unitType === "Knight" && renderKnight()}
+      {unitType === "Bowman" && renderBowman()}
       
       {/* HP Bar */}
       <g transform={`translate(${x - s * 0.8}, ${y - s * 1.8})`}>

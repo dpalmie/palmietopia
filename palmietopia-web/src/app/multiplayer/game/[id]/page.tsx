@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { HexGrid } from "@/components/HexGrid";
 import { GameOverDialog } from "@/components/GameOverDialog";
 import { useWebSocket, GameSession, Unit } from "@/hooks/useWebSocket";
-import { PLAYER_COLORS } from "@/types/game";
+import { PLAYER_COLORS, UNIT_STATS, UnitType } from "@/types/game";
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -149,9 +149,10 @@ export default function GamePage() {
     if (selectedUnitId && clickedUnit.owner_id !== myPlayerId && isMyTurn) {
       const myUnit = (currentGame.units || []).find(u => u.id === selectedUnitId);
       if (myUnit && myUnit.movement_remaining > 0) {
-        // Check if adjacent
+        // Check if within attack range
         const distance = hexDistance(myUnit.q, myUnit.r, clickedUnit.q, clickedUnit.r);
-        if (distance === 1) {
+        const unitRange = UNIT_STATS[myUnit.unit_type as UnitType]?.range ?? 1;
+        if (distance <= unitRange) {
           attackUnit(gameId, myPlayerId, selectedUnitId, unitId);
           setSelectedUnitId(null);
           setHighlightedTiles([]);
@@ -187,6 +188,17 @@ export default function GamePage() {
     const currentPlayer = currentGame.players[currentGame.current_turn];
     const isMyTurn = currentPlayer.id === myPlayerId;
     
+    // If we have a unit selected and click an enemy city, try to move there to capture
+    if (selectedUnitId && isMyTurn && clickedCity.owner_id !== myPlayerId) {
+      const isValidMove = highlightedTiles.some(t => t.q === clickedCity.q && t.r === clickedCity.r);
+      if (isValidMove) {
+        moveUnit(gameId, myPlayerId, selectedUnitId, clickedCity.q, clickedCity.r);
+        setSelectedUnitId(null);
+        setHighlightedTiles([]);
+        return;
+      }
+    }
+    
     // Clear unit selection when clicking cities
     setSelectedUnitId(null);
     setHighlightedTiles([]);
@@ -204,7 +216,7 @@ export default function GamePage() {
       // Select city
       setSelectedCityId(cityId);
     }
-  }, [currentGame, myPlayerId, selectedCityId]);
+  }, [currentGame, myPlayerId, selectedCityId, selectedUnitId, highlightedTiles, gameId, moveUnit]);
 
   const handleTileClick = useCallback((q: number, r: number) => {
     if (!selectedUnitId || !myPlayerId || !currentGame) return;
@@ -386,8 +398,9 @@ export default function GamePage() {
       {isMyTurn && !isEliminated && selectedUnitId && (() => {
         const selectedUnit = (currentGame.units || []).find(u => u.id === selectedUnitId);
         if (!selectedUnit) return null;
-        const canFortify = selectedUnit.movement_remaining === selectedUnit.max_hp / 50 && selectedUnit.hp < selectedUnit.max_hp;
-        const hasFullMovement = selectedUnit.movement_remaining === 2; // Conscript base movement
+        const unitStats = UNIT_STATS[selectedUnit.unit_type as UnitType];
+        const baseMovement = unitStats?.movement ?? 2;
+        const hasFullMovement = selectedUnit.movement_remaining === baseMovement;
         const needsHealing = selectedUnit.hp < selectedUnit.max_hp;
         return (
           <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm flex items-center justify-center gap-4">
@@ -416,23 +429,47 @@ export default function GamePage() {
         if (!selectedCity) return null;
         const hasUnitOnCity = (currentGame.units || []).some(u => u.q === selectedCity.q && u.r === selectedCity.r);
         const canProduce = !selectedCity.produced_this_turn && !hasUnitOnCity;
-        const conscriptCost = 25;
-        const canAfford = myGold >= conscriptCost;
         return (
-          <div className="px-4 py-2 bg-amber-900/30 text-amber-300 text-sm flex items-center justify-center gap-4">
+          <div className="px-4 py-2 bg-amber-900/30 text-amber-300 text-sm flex items-center justify-center gap-4 flex-wrap">
             <span>
               Selected city: {selectedCity.name} {selectedCity.is_capitol ? "(Capitol)" : ""}
             </span>
-            {canProduce && canAfford && (
-              <button
-                onClick={() => handleBuyUnit("Conscript")}
-                className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 rounded text-white text-sm font-medium transition-colors"
-              >
-                Buy Conscript ({conscriptCost}g)
-              </button>
-            )}
-            {canProduce && !canAfford && (
-              <span className="text-zinc-400 text-xs">(Need {conscriptCost}g, have {myGold}g)</span>
+            {canProduce && (
+              <>
+                <button
+                  onClick={() => handleBuyUnit("Conscript")}
+                  disabled={myGold < UNIT_STATS.Conscript.cost}
+                  className={`px-3 py-1 rounded text-white text-sm font-medium transition-colors ${
+                    myGold >= UNIT_STATS.Conscript.cost 
+                      ? "bg-yellow-600 hover:bg-yellow-500" 
+                      : "bg-zinc-600 cursor-not-allowed opacity-50"
+                  }`}
+                >
+                  Buy Conscript ({UNIT_STATS.Conscript.cost}g)
+                </button>
+                <button
+                  onClick={() => handleBuyUnit("Knight")}
+                  disabled={myGold < UNIT_STATS.Knight.cost}
+                  className={`px-3 py-1 rounded text-white text-sm font-medium transition-colors ${
+                    myGold >= UNIT_STATS.Knight.cost 
+                      ? "bg-red-600 hover:bg-red-500" 
+                      : "bg-zinc-600 cursor-not-allowed opacity-50"
+                  }`}
+                >
+                  Buy Knight ({UNIT_STATS.Knight.cost}g)
+                </button>
+                <button
+                  onClick={() => handleBuyUnit("Bowman")}
+                  disabled={myGold < UNIT_STATS.Bowman.cost}
+                  className={`px-3 py-1 rounded text-white text-sm font-medium transition-colors ${
+                    myGold >= UNIT_STATS.Bowman.cost 
+                      ? "bg-green-600 hover:bg-green-500" 
+                      : "bg-zinc-600 cursor-not-allowed opacity-50"
+                  }`}
+                >
+                  Buy Bowman ({UNIT_STATS.Bowman.cost}g)
+                </button>
+              </>
             )}
             {selectedCity.produced_this_turn && (
               <span className="text-zinc-400 text-xs">(Already produced this turn)</span>

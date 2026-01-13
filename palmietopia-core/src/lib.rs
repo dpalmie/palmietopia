@@ -121,12 +121,16 @@ pub struct City {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum UnitType {
     Conscript,
+    Knight,
+    Bowman,
 }
 
 impl UnitType {
     pub fn base_movement(&self) -> u32 {
         match self {
             UnitType::Conscript => 2,
+            UnitType::Knight => 3,
+            UnitType::Bowman => 2,
         }
     }
 
@@ -134,12 +138,24 @@ impl UnitType {
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
             UnitType::Conscript => (50, 25, 15),
+            UnitType::Knight => (50, 35, 10),
+            UnitType::Bowman => (40, 22, 10),
         }
     }
 
     pub fn cost(&self) -> u64 {
         match self {
             UnitType::Conscript => 25,
+            UnitType::Knight => 40,
+            UnitType::Bowman => 25,
+        }
+    }
+
+    pub fn range(&self) -> i32 {
+        match self {
+            UnitType::Conscript => 1,
+            UnitType::Knight => 1,
+            UnitType::Bowman => 2,
         }
     }
 }
@@ -572,12 +588,13 @@ impl GameSession {
         let defender_idx = self.units.iter().position(|u| u.id == defender_id)
             .ok_or("Defender not found")?;
         
-        // Check they are adjacent
+        // Check attacker can reach defender (within range)
         let attacker = &self.units[attacker_idx];
         let defender = &self.units[defender_idx];
         let distance = Self::hex_distance(attacker.q, attacker.r, defender.q, defender.r);
-        if distance != 1 {
-            return Err("Units must be adjacent to attack".to_string());
+        let attacker_range = attacker.unit_type.range();
+        if distance > attacker_range {
+            return Err(format!("Target out of range (range: {}, distance: {})", attacker_range, distance));
         }
         
         // Check attacker has movement
@@ -593,7 +610,12 @@ impl GameSession {
         
         // Damage formula: attack * 30 / (30 + defense)
         let damage_to_defender = attacker_attack * 30 / (30 + defender_effective_def);
-        let damage_to_attacker = defender_attack * 30 / (30 + attacker_def) / 2; // Counterattack is weaker
+        // Counterattack only happens at melee range (distance 1)
+        let damage_to_attacker = if distance == 1 {
+            defender_attack * 30 / (30 + attacker_def) / 2 // Counterattack is weaker
+        } else {
+            0 // Ranged attack, no counterattack
+        };
         
         // Apply damage
         self.units[defender_idx].hp = self.units[defender_idx].hp.saturating_sub(damage_to_defender);
