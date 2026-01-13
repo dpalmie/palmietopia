@@ -41,6 +41,7 @@ export default function GamePage() {
     rejoinGame,
     moveUnit,
     attackUnit,
+    fortifyUnit,
   } = useWebSocket();
 
   const [initialGame, setInitialGame] = useState<GameSession | null>(null);
@@ -217,6 +218,15 @@ export default function GamePage() {
     }
   };
 
+  const handleFortify = () => {
+    if (myPlayerId && selectedUnitId) {
+      console.log("Fortifying unit:", { gameId, myPlayerId, selectedUnitId });
+      fortifyUnit(gameId, myPlayerId, selectedUnitId);
+      setSelectedUnitId(null);
+      setHighlightedTiles([]);
+    }
+  };
+
   if (!isConnected) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900">
@@ -319,11 +329,39 @@ export default function GamePage() {
       </div>
 
       {/* Instructions */}
-      {isMyTurn && !isEliminated && (
+      {isMyTurn && !isEliminated && !selectedUnitId && (
         <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm text-center">
           Your turn! Click a unit to select it, then click a tile to move or an enemy unit to attack.
         </div>
       )}
+      {isMyTurn && !isEliminated && selectedUnitId && (() => {
+        const selectedUnit = (currentGame.units || []).find(u => u.id === selectedUnitId);
+        if (!selectedUnit) return null;
+        const canFortify = selectedUnit.movement_remaining === selectedUnit.max_hp / 50 && selectedUnit.hp < selectedUnit.max_hp;
+        const hasFullMovement = selectedUnit.movement_remaining === 2; // Conscript base movement
+        const needsHealing = selectedUnit.hp < selectedUnit.max_hp;
+        return (
+          <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm flex items-center justify-center gap-4">
+            <span>
+              Selected unit: HP {selectedUnit.hp}/{selectedUnit.max_hp} | Movement: {selectedUnit.movement_remaining}
+            </span>
+            {hasFullMovement && needsHealing && (
+              <button
+                onClick={handleFortify}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm font-medium transition-colors"
+              >
+                Fortify (+25 HP)
+              </button>
+            )}
+            {hasFullMovement && !needsHealing && (
+              <span className="text-zinc-400 text-xs">(Full HP - cannot fortify)</span>
+            )}
+            {!hasFullMovement && needsHealing && (
+              <span className="text-zinc-400 text-xs">(Cannot fortify after moving)</span>
+            )}
+          </div>
+        );
+      })()}
       {isEliminated && (
         <div className="px-4 py-2 bg-red-900/30 text-red-300 text-sm text-center">
           You have been eliminated! Your capitol was captured.

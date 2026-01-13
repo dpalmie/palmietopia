@@ -439,6 +439,23 @@ impl GameSession {
         }
     }
 
+    pub fn fortify_unit(&mut self, unit_id: &str) -> Result<u32, String> {
+        let unit = self.units.iter_mut().find(|u| u.id == unit_id)
+            .ok_or("Unit not found")?;
+        
+        // Must have full movement (hasn't acted this turn)
+        if unit.movement_remaining < unit.unit_type.base_movement() {
+            return Err("Cannot fortify after moving".to_string());
+        }
+        
+        // Heal 25 HP, capped at max
+        let heal_amount = 25;
+        unit.hp = (unit.hp + heal_amount).min(unit.max_hp);
+        unit.movement_remaining = 0;
+        
+        Ok(unit.hp)
+    }
+
     pub fn end_current_turn(&mut self, time_used_ms: u64) {
         let current = self.current_turn;
         self.player_times_ms[current] = self.player_times_ms[current]
@@ -602,6 +619,7 @@ pub enum ClientMessage {
     RejoinGame { game_id: String, player_id: String },
     MoveUnit { game_id: String, player_id: String, unit_id: String, to_q: i32, to_r: i32 },
     AttackUnit { game_id: String, player_id: String, attacker_id: String, defender_id: String },
+    FortifyUnit { game_id: String, player_id: String, unit_id: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -631,6 +649,7 @@ pub enum ServerMessage {
     PlayerEliminated { player_id: String, conquerer_id: String },
     CitiesCaptured { cities: Vec<City> },
     GameOver { winner_id: String },
+    UnitFortified { unit_id: String, new_hp: u32 },
 }
 
 /// Terrain types for map tiles

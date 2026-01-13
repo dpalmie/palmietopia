@@ -79,7 +79,8 @@ export type ServerMessage =
   | { type: "CombatResult"; attacker_id: string; defender_id: string; attacker_hp: number; defender_hp: number; damage_to_attacker: number; damage_to_defender: number; attacker_died: boolean; defender_died: boolean }
   | { type: "PlayerEliminated"; player_id: string; conquerer_id: string }
   | { type: "CitiesCaptured"; cities: City[] }
-  | { type: "GameOver"; winner_id: string };
+  | { type: "GameOver"; winner_id: string }
+  | { type: "UnitFortified"; unit_id: string; new_hp: number };
 
 export type ClientMessage =
   | { type: "CreateLobby"; player_name: string; map_size: MapSize }
@@ -90,7 +91,8 @@ export type ClientMessage =
   | { type: "EndTurn"; game_id: string; player_id: string }
   | { type: "RejoinGame"; game_id: string; player_id: string }
   | { type: "MoveUnit"; game_id: string; player_id: string; unit_id: string; to_q: number; to_r: number }
-  | { type: "AttackUnit"; game_id: string; player_id: string; attacker_id: string; defender_id: string };
+  | { type: "AttackUnit"; game_id: string; player_id: string; attacker_id: string; defender_id: string }
+  | { type: "FortifyUnit"; game_id: string; player_id: string; unit_id: string };
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001/ws";
 
@@ -242,6 +244,20 @@ export function useWebSocket() {
             console.log("GameOver! Winner:", msg.winner_id);
             setGame((prev) => prev ? { ...prev, status: { Victory: { winner_id: msg.winner_id } } } : null);
             break;
+          case "UnitFortified":
+            console.log("UnitFortified:", msg);
+            setGame((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                units: prev.units.map((u) =>
+                  u.id === msg.unit_id
+                    ? { ...u, hp: msg.new_hp, movement_remaining: 0 }
+                    : u
+                ),
+              };
+            });
+            break;
           case "PlayerLeft":
             break;
           case "Error":
@@ -311,6 +327,11 @@ export function useWebSocket() {
     send({ type: "AttackUnit", game_id: gameId, player_id: playerId, attacker_id: attackerId, defender_id: defenderId });
   }, [send]);
 
+  const fortifyUnit = useCallback((gameId: string, playerId: string, unitId: string) => {
+    console.log("Sending FortifyUnit:", { gameId, playerId, unitId });
+    send({ type: "FortifyUnit", game_id: gameId, player_id: playerId, unit_id: unitId });
+  }, [send]);
+
   return {
     isConnected,
     playerId,
@@ -328,6 +349,7 @@ export function useWebSocket() {
     rejoinGame,
     moveUnit,
     attackUnit,
+    fortifyUnit,
     setError,
     setCurrentLobby,
     setGame,

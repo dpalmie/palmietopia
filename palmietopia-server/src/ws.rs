@@ -407,6 +407,22 @@ async fn handle_client_message(
                 }
             }
         }
+
+        ClientMessage::FortifyUnit { game_id, player_id: msg_player_id, unit_id } => {
+            tracing::info!("FortifyUnit received: game_id={}, player_id={}, unit_id={}", 
+                game_id, msg_player_id, unit_id);
+            
+            match state.game_manager.fortify_unit(&game_id, &msg_player_id, &unit_id).await {
+                Ok(new_hp) => {
+                    tracing::info!("FortifyUnit succeeded, new_hp={}", new_hp);
+                    Some(ServerMessage::UnitFortified { unit_id, new_hp })
+                }
+                Err(e) => {
+                    tracing::error!("FortifyUnit failed: {}", e);
+                    Some(ServerMessage::Error { message: e })
+                }
+            }
+        }
     }
 }
 

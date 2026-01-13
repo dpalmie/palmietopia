@@ -222,6 +222,41 @@ impl GameManager {
         Ok(outcome)
     }
 
+    pub async fn fortify_unit(&self, game_id: &str, player_id: &str, unit_id: &str) -> Result<u32, String> {
+        tracing::info!("fortify_unit called: game_id={}, player_id={}, unit_id={}", game_id, player_id, unit_id);
+        
+        let mut games = self.active_games.write().await;
+        let active_game = games.get_mut(game_id).ok_or_else(|| {
+            tracing::error!("Game not found: {}", game_id);
+            "Game not found".to_string()
+        })?;
+
+        // Verify it's this player's turn
+        let current_player = &active_game.game.players[active_game.game.current_turn];
+        if current_player.id != player_id {
+            return Err("Not your turn".to_string());
+        }
+
+        // Verify the unit belongs to the player
+        let unit = active_game.game.units.iter().find(|u| u.id == unit_id)
+            .ok_or("Unit not found")?;
+        if unit.owner_id != player_id {
+            return Err("Not your unit".to_string());
+        }
+
+        // Perform fortify
+        let new_hp = active_game.game.fortify_unit(unit_id)?;
+
+        // Broadcast the fortify to all players
+        let msg = ServerMessage::UnitFortified {
+            unit_id: unit_id.to_string(),
+            new_hp,
+        };
+        let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
+
+        Ok(new_hp)
+    }
+
     pub fn get_channel(&self, game_id: &str) -> Option<broadcast::Sender<String>> {
         let _ = game_id;
         None

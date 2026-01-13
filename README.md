@@ -138,6 +138,14 @@ The Conscript is the most basic military unit available at game start.
 - **Cannot move to Water tiles** at all
 - Cannot move to tiles occupied by other units
 
+### Unit Actions
+
+**Fortify**
+- Heals the unit for **25 HP** (capped at max HP)
+- Requires **full movement** - cannot fortify after moving
+- Consumes all remaining movement
+- Useful for recovering damaged units in safe positions
+
 ## Combat System
 
 Palmietopia uses a **Civilization V inspired** combat system where both attacker and defender deal damage to each other.
