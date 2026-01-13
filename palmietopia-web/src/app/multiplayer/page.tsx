@@ -14,7 +14,6 @@ export default function MultiplayerPage() {
     lobbies,
     game,
     error,
-    connect,
     createLobby,
     joinLobby,
     leaveLobby,
@@ -28,16 +27,11 @@ export default function MultiplayerPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [joinLobbyId, setJoinLobbyId] = useState<string | null>(null);
 
+  // Refresh lobby list periodically
   useEffect(() => {
-    connect();
-  }, [connect]);
-
-  useEffect(() => {
-    if (isConnected) {
-      listLobbies();
-      const interval = setInterval(listLobbies, 5000);
-      return () => clearInterval(interval);
-    }
+    if (!isConnected) return;
+    const interval = setInterval(listLobbies, 5000);
+    return () => clearInterval(interval);
   }, [isConnected, listLobbies]);
 
   useEffect(() => {

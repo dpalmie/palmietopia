@@ -52,16 +52,9 @@ export type ClientMessage =
   | { type: "StartGame" }
   | { type: "ListLobbies" };
 
-interface UseWebSocketOptions {
-  onMessage?: (msg: ServerMessage) => void;
-  onOpen?: () => void;
-  onClose?: () => void;
-  onError?: (error: Event) => void;
-}
-
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001/ws";
 
-export function useWebSocket(options: UseWebSocketOptions = {}) {
+export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [currentLobby, setCurrentLobby] = useState<Lobby | null>(null);
@@ -70,80 +63,60 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
+  // Auto-connect on mount, cleanup on unmount
+  useEffect(() => {
     const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
       setError(null);
-      options.onOpen?.();
+      ws.send(JSON.stringify({ type: "ListLobbies" }));
     };
 
     ws.onclose = () => {
       setIsConnected(false);
-      options.onClose?.();
-      // Auto-reconnect after 3 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 3000);
     };
 
-    ws.onerror = (e) => {
+    ws.onerror = () => {
       setError("Connection error");
-      options.onError?.(e);
     };
 
     ws.onmessage = (event) => {
       try {
         const msg: ServerMessage = JSON.parse(event.data);
-        handleMessage(msg);
-        options.onMessage?.(msg);
+        
+        switch (msg.type) {
+          case "LobbyCreated":
+            setPlayerId(msg.player_id);
+            break;
+          case "LobbyUpdated":
+            setCurrentLobby(msg.lobby);
+            break;
+          case "LobbyList":
+            setLobbies(msg.lobbies);
+            break;
+          case "GameStarted":
+            setGame(msg.game);
+            if (typeof window !== "undefined") {
+              sessionStorage.setItem(`game-${msg.game.id}`, JSON.stringify(msg.game));
+            }
+            break;
+          case "PlayerLeft":
+            break;
+          case "Error":
+            setError(msg.message);
+            break;
+        }
       } catch (e) {
         console.error("Failed to parse message:", e);
       }
     };
 
-    wsRef.current = ws;
-  }, [options]);
-
-  const handleMessage = useCallback((msg: ServerMessage) => {
-    switch (msg.type) {
-      case "LobbyCreated":
-        setPlayerId(msg.player_id);
-        break;
-      case "LobbyUpdated":
-        setCurrentLobby(msg.lobby);
-        break;
-      case "LobbyList":
-        setLobbies(msg.lobbies);
-        break;
-      case "GameStarted":
-        setGame(msg.game);
-        // Store game in sessionStorage for the game page
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem(`game-${msg.game.id}`, JSON.stringify(msg.game));
-        }
-        break;
-      case "PlayerLeft":
-        // Handled by LobbyUpdated
-        break;
-      case "Error":
-        setError(msg.message);
-        break;
-    }
-  }, []);
-
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    wsRef.current?.close();
-    wsRef.current = null;
-    setIsConnected(false);
+    return () => {
+      ws.close();
+    };
   }, []);
 
   const send = useCallback((msg: ClientMessage) => {
@@ -179,12 +152,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     send({ type: "ListLobbies" });
   }, [send]);
 
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
-
   return {
     isConnected,
     playerId,
@@ -192,8 +159,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     lobbies,
     game,
     error,
-    connect,
-    disconnect,
     createLobby,
     joinLobby,
     leaveLobby,
