@@ -42,12 +42,14 @@ export default function GamePage() {
     moveUnit,
     attackUnit,
     fortifyUnit,
+    buyUnit,
   } = useWebSocket();
 
   const [initialGame, setInitialGame] = useState<GameSession | null>(null);
   const [localTimeRemaining, setLocalTimeRemaining] = useState<number>(0);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
   const [highlightedTiles, setHighlightedTiles] = useState<{ q: number; r: number }[]>([]);
 
   useEffect(() => {
@@ -140,6 +142,9 @@ export default function GamePage() {
     const currentPlayer = currentGame.players[currentGame.current_turn];
     const isMyTurn = currentPlayer.id === myPlayerId;
     
+    // Clear city selection when clicking units
+    setSelectedCityId(null);
+    
     // If we have a unit selected and click an enemy unit, try to attack
     if (selectedUnitId && clickedUnit.owner_id !== myPlayerId && isMyTurn) {
       const myUnit = (currentGame.units || []).find(u => u.id === selectedUnitId);
@@ -172,6 +177,34 @@ export default function GamePage() {
       setHighlightedTiles(calculateMovementTiles(clickedUnit));
     }
   }, [currentGame, myPlayerId, selectedUnitId, calculateMovementTiles, gameId, attackUnit]);
+
+  const handleCityClick = useCallback((cityId: string) => {
+    if (!currentGame || !myPlayerId) return;
+    
+    const clickedCity = (currentGame.cities || []).find(c => c.id === cityId);
+    if (!clickedCity) return;
+    
+    const currentPlayer = currentGame.players[currentGame.current_turn];
+    const isMyTurn = currentPlayer.id === myPlayerId;
+    
+    // Clear unit selection when clicking cities
+    setSelectedUnitId(null);
+    setHighlightedTiles([]);
+    
+    // Can only select own cities on your turn
+    if (!isMyTurn || clickedCity.owner_id !== myPlayerId) {
+      setSelectedCityId(null);
+      return;
+    }
+    
+    if (selectedCityId === cityId) {
+      // Deselect
+      setSelectedCityId(null);
+    } else {
+      // Select city
+      setSelectedCityId(cityId);
+    }
+  }, [currentGame, myPlayerId, selectedCityId]);
 
   const handleTileClick = useCallback((q: number, r: number) => {
     if (!selectedUnitId || !myPlayerId || !currentGame) return;
@@ -227,6 +260,14 @@ export default function GamePage() {
     }
   };
 
+  const handleBuyUnit = (unitType: string) => {
+    if (myPlayerId && selectedCityId) {
+      console.log("Buying unit:", { gameId, myPlayerId, selectedCityId, unitType });
+      buyUnit(gameId, myPlayerId, selectedCityId, unitType);
+      setSelectedCityId(null);
+    }
+  };
+
   if (!isConnected) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900">
@@ -260,6 +301,10 @@ export default function GamePage() {
   const isVictory = typeof currentGame.status === "object" && "Victory" in currentGame.status;
   const winnerId = isVictory ? (currentGame.status as { Victory: { winner_id: string } }).Victory.winner_id : null;
   const winnerName = winnerId ? currentGame.players.find(p => p.id === winnerId)?.name || null : null;
+  
+  // Get my gold amount
+  const myPlayerIdx = currentGame.players.findIndex(p => p.id === myPlayerId);
+  const myGold = myPlayerIdx >= 0 ? (currentGame.player_gold?.[myPlayerIdx] ?? 0) : 0;
 
   return (
     <div className="flex h-screen flex-col bg-zinc-900">
@@ -271,6 +316,10 @@ export default function GamePage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <div className="text-xl font-bold text-yellow-400">
+            💰 {myGold}
+          </div>
+          
           <div className={`text-2xl font-mono font-bold ${isLowTime ? "text-red-500" : "text-zinc-50"}`}>
             {formatTime(timeRemaining)}
           </div>
@@ -329,9 +378,9 @@ export default function GamePage() {
       </div>
 
       {/* Instructions */}
-      {isMyTurn && !isEliminated && !selectedUnitId && (
+      {isMyTurn && !isEliminated && !selectedUnitId && !selectedCityId && (
         <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm text-center">
-          Your turn! Click a unit to select it, then click a tile to move or an enemy unit to attack.
+          Your turn! Click a unit to select it, or click a city to produce units.
         </div>
       )}
       {isMyTurn && !isEliminated && selectedUnitId && (() => {
@@ -350,7 +399,7 @@ export default function GamePage() {
                 onClick={handleFortify}
                 className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm font-medium transition-colors"
               >
-                Fortify (+25 HP)
+                Fortify (+25%)
               </button>
             )}
             {hasFullMovement && !needsHealing && (
@@ -358,6 +407,38 @@ export default function GamePage() {
             )}
             {!hasFullMovement && needsHealing && (
               <span className="text-zinc-400 text-xs">(Cannot fortify after moving)</span>
+            )}
+          </div>
+        );
+      })()}
+      {isMyTurn && !isEliminated && selectedCityId && (() => {
+        const selectedCity = (currentGame.cities || []).find(c => c.id === selectedCityId);
+        if (!selectedCity) return null;
+        const hasUnitOnCity = (currentGame.units || []).some(u => u.q === selectedCity.q && u.r === selectedCity.r);
+        const canProduce = !selectedCity.produced_this_turn && !hasUnitOnCity;
+        const conscriptCost = 25;
+        const canAfford = myGold >= conscriptCost;
+        return (
+          <div className="px-4 py-2 bg-amber-900/30 text-amber-300 text-sm flex items-center justify-center gap-4">
+            <span>
+              Selected city: {selectedCity.name} {selectedCity.is_capitol ? "(Capitol)" : ""}
+            </span>
+            {canProduce && canAfford && (
+              <button
+                onClick={() => handleBuyUnit("Conscript")}
+                className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 rounded text-white text-sm font-medium transition-colors"
+              >
+                Buy Conscript ({conscriptCost}g)
+              </button>
+            )}
+            {canProduce && !canAfford && (
+              <span className="text-zinc-400 text-xs">(Need {conscriptCost}g, have {myGold}g)</span>
+            )}
+            {selectedCity.produced_this_turn && (
+              <span className="text-zinc-400 text-xs">(Already produced this turn)</span>
+            )}
+            {hasUnitOnCity && !selectedCity.produced_this_turn && (
+              <span className="text-zinc-400 text-xs">(City is occupied - move unit first)</span>
             )}
           </div>
         );
@@ -376,9 +457,11 @@ export default function GamePage() {
           units={currentGame.units || []}
           players={currentGame.players}
           selectedUnitId={selectedUnitId}
+          selectedCityId={selectedCityId}
           highlightedTiles={highlightedTiles}
           onTileClick={handleTileClick}
           onUnitClick={handleUnitClick}
+          onCityClick={handleCityClick}
         />
       </main>
 

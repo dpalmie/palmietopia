@@ -117,6 +117,38 @@ Players' starting cities are distributed evenly across the map:
 
 The algorithm finds valid tiles (non-water, non-mountain) closest to the target direction while maintaining minimum distance from other players' starting positions.
 
+## Economy
+
+Palmietopia features a gold-based economy for unit production.
+
+### Gold
+
+| Setting | Value |
+|---------|-------|
+| Starting Gold | 50 |
+| Base Income | +20 per turn |
+
+- Gold is displayed in the game header
+- Income is granted at the **start of each turn**
+- Gold is used to purchase units from cities
+
+### Unit Production
+
+Each city can produce **1 unit per turn**:
+- Click a city you own to select it
+- Click "Buy" to purchase a unit (if you have enough gold)
+- The city must be **unoccupied** (no unit on the tile)
+- New units spawn with **0 movement** (can't act on the turn they're created)
+- Production resets at the start of your turn
+
+**Unit Costs:**
+
+| Unit | Cost |
+|------|------|
+| Conscript | 25 gold |
+
+**Strategic Note:** Since units start in your Capitol, you must move your starting unit out before you can produce more. This creates an early-game decision between defending (garrisoned unit) and expanding (producing more units).
+
 ## Units
 
 ### Conscript (Basic Warrior)
@@ -125,13 +157,14 @@ The Conscript is the most basic military unit available at game start.
 
 | Stat | Value |
 |------|-------|
-| HP | 100 |
-| Attack | 20 |
+| Cost | 25 gold |
+| HP | 50 |
+| Attack | 25 |
 | Defense | 15 |
 | Movement | 2 tiles per turn |
 
 **Movement Rules:**
-- Each player starts with **1 Conscript** adjacent to their starting city
+- Each player starts with **1 Conscript** in their Capitol city
 - Movement resets to full (2) at the start of each player's turn
 - Moving to Grassland, Forest, or Desert costs **1 movement**
 - Moving to Mountain costs **2 movement** (can only move 1 tile per turn on mountains)
@@ -141,7 +174,7 @@ The Conscript is the most basic military unit available at game start.
 ### Unit Actions
 
 **Fortify**
-- Heals the unit for **25 HP** (capped at max HP)
+- Heals the unit for **25% of max HP**
 - Requires **full movement** - cannot fortify after moving
 - Consumes all remaining movement
 - Useful for recovering damaged units in safe positions

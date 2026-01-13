@@ -321,7 +321,9 @@ async fn handle_client_message(
                     Some(ServerMessage::TurnChanged {
                         current_turn: game.current_turn,
                         player_times_ms: game.player_times_ms.clone(),
+                        player_gold: game.player_gold.clone(),
                         units: game.units.clone(),
+                        cities: game.cities.clone(),
                     })
                 }
                 Err(e) => {
@@ -399,6 +401,8 @@ async fn handle_client_message(
                         damage_to_defender: outcome.damage_to_defender,
                         attacker_died: outcome.attacker_died,
                         defender_died: outcome.defender_died,
+                        attacker_new_q: outcome.attacker_new_q,
+                        attacker_new_r: outcome.attacker_new_r,
                     })
                 }
                 Err(e) => {
@@ -419,6 +423,28 @@ async fn handle_client_message(
                 }
                 Err(e) => {
                     tracing::error!("FortifyUnit failed: {}", e);
+                    Some(ServerMessage::Error { message: e })
+                }
+            }
+        }
+
+        ClientMessage::BuyUnit { game_id, player_id: msg_player_id, city_id, unit_type } => {
+            tracing::info!("BuyUnit received: game_id={}, player_id={}, city_id={}, unit_type={}", 
+                game_id, msg_player_id, city_id, unit_type);
+            
+            // Parse unit type
+            let parsed_unit_type = match unit_type.as_str() {
+                "Conscript" => palmietopia_core::UnitType::Conscript,
+                _ => return Some(ServerMessage::Error { message: "Invalid unit type".to_string() }),
+            };
+            
+            match state.game_manager.buy_unit(&game_id, &msg_player_id, &city_id, parsed_unit_type).await {
+                Ok((unit, player_gold)) => {
+                    tracing::info!("BuyUnit succeeded, unit_id={}, gold={}", unit.id, player_gold);
+                    None // Broadcast already sent by game_manager
+                }
+                Err(e) => {
+                    tracing::error!("BuyUnit failed: {}", e);
                     Some(ServerMessage::Error { message: e })
                 }
             }

@@ -36,6 +36,7 @@ export interface City {
   r: number;
   name: string;
   is_capitol: boolean;
+  produced_this_turn: boolean;
 }
 
 export interface Unit {
@@ -59,6 +60,7 @@ export interface GameSession {
   status: string | { Victory: { winner_id: string } };
   eliminated_players: string[];
   player_times_ms: number[];
+  player_gold: number[];
   turn_started_at_ms: number;
   base_time_ms: number;
   increment_ms: number;
@@ -73,14 +75,15 @@ export type ServerMessage =
   | { type: "GameRejoined"; game: GameSession }
   | { type: "PlayerLeft"; player_id: string }
   | { type: "Error"; message: string }
-  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; units: Unit[] }
+  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; player_gold: number[]; units: Unit[]; cities: City[] }
   | { type: "TimeTick"; player_index: number; remaining_ms: number }
   | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number }
-  | { type: "CombatResult"; attacker_id: string; defender_id: string; attacker_hp: number; defender_hp: number; damage_to_attacker: number; damage_to_defender: number; attacker_died: boolean; defender_died: boolean }
+  | { type: "CombatResult"; attacker_id: string; defender_id: string; attacker_hp: number; defender_hp: number; damage_to_attacker: number; damage_to_defender: number; attacker_died: boolean; defender_died: boolean; attacker_new_q: number | null; attacker_new_r: number | null }
   | { type: "PlayerEliminated"; player_id: string; conquerer_id: string }
   | { type: "CitiesCaptured"; cities: City[] }
   | { type: "GameOver"; winner_id: string }
-  | { type: "UnitFortified"; unit_id: string; new_hp: number };
+  | { type: "UnitFortified"; unit_id: string; new_hp: number }
+  | { type: "UnitPurchased"; unit: Unit; city_id: string; player_gold: number };
 
 export type ClientMessage =
   | { type: "CreateLobby"; player_name: string; map_size: MapSize }
@@ -92,7 +95,8 @@ export type ClientMessage =
   | { type: "RejoinGame"; game_id: string; player_id: string }
   | { type: "MoveUnit"; game_id: string; player_id: string; unit_id: string; to_q: number; to_r: number }
   | { type: "AttackUnit"; game_id: string; player_id: string; attacker_id: string; defender_id: string }
-  | { type: "FortifyUnit"; game_id: string; player_id: string; unit_id: string };
+  | { type: "FortifyUnit"; game_id: string; player_id: string; unit_id: string }
+  | { type: "BuyUnit"; game_id: string; player_id: string; city_id: string; unit_type: string };
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001/ws";
 
@@ -173,7 +177,9 @@ export function useWebSocket() {
                 ...prev, 
                 current_turn: msg.current_turn,
                 player_times_ms: msg.player_times_ms,
+                player_gold: msg.player_gold,
                 units: msg.units,
+                cities: msg.cities,
                 turn_started_at_ms: Date.now(),
               } : null
             );
@@ -208,7 +214,14 @@ export function useWebSocket() {
               if (!prev) return null;
               let newUnits = prev.units.map((u) => {
                 if (u.id === msg.attacker_id) {
-                  return { ...u, hp: msg.attacker_hp, movement_remaining: 0 };
+                  return { 
+                    ...u, 
+                    hp: msg.attacker_hp, 
+                    movement_remaining: 0,
+                    // Move to defender's position if we killed them
+                    ...(msg.attacker_new_q !== null && { q: msg.attacker_new_q }),
+                    ...(msg.attacker_new_r !== null && { r: msg.attacker_new_r }),
+                  };
                 }
                 if (u.id === msg.defender_id) {
                   return { ...u, hp: msg.defender_hp };
@@ -255,6 +268,28 @@ export function useWebSocket() {
                     ? { ...u, hp: msg.new_hp, movement_remaining: 0 }
                     : u
                 ),
+              };
+            });
+            break;
+          case "UnitPurchased":
+            console.log("UnitPurchased:", msg);
+            setGame((prev) => {
+              if (!prev) return null;
+              // Find player index to update gold
+              const playerIdx = prev.players.findIndex(p => p.id === msg.unit.owner_id);
+              const newGold = [...prev.player_gold];
+              if (playerIdx >= 0) {
+                newGold[playerIdx] = msg.player_gold;
+              }
+              // Mark city as produced
+              const newCities = prev.cities.map(c => 
+                c.id === msg.city_id ? { ...c, produced_this_turn: true } : c
+              );
+              return {
+                ...prev,
+                units: [...prev.units, msg.unit],
+                cities: newCities,
+                player_gold: newGold,
               };
             });
             break;
@@ -332,6 +367,11 @@ export function useWebSocket() {
     send({ type: "FortifyUnit", game_id: gameId, player_id: playerId, unit_id: unitId });
   }, [send]);
 
+  const buyUnit = useCallback((gameId: string, playerId: string, cityId: string, unitType: string) => {
+    console.log("Sending BuyUnit:", { gameId, playerId, cityId, unitType });
+    send({ type: "BuyUnit", game_id: gameId, player_id: playerId, city_id: cityId, unit_type: unitType });
+  }, [send]);
+
   return {
     isConnected,
     playerId,
@@ -350,6 +390,7 @@ export function useWebSocket() {
     moveUnit,
     attackUnit,
     fortifyUnit,
+    buyUnit,
     setError,
     setCurrentLobby,
     setGame,

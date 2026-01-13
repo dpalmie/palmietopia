@@ -23,9 +23,11 @@ interface HexGridProps {
   units?: UnitType[];
   players?: Player[];
   selectedUnitId?: string | null;
+  selectedCityId?: string | null;
   highlightedTiles?: { q: number; r: number }[];
   onTileClick?: (q: number, r: number) => void;
   onUnitClick?: (unitId: string) => void;
+  onCityClick?: (cityId: string) => void;
 }
 
 const PLAYER_COLORS: Record<string, string> = {
@@ -43,9 +45,11 @@ export function HexGrid({
   units = [], 
   players = [],
   selectedUnitId,
+  selectedCityId,
   highlightedTiles = [],
   onTileClick,
   onUnitClick,
+  onCityClick,
 }: HexGridProps) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -153,6 +157,8 @@ export function HexGrid({
               size={hexSize}
               ownerColor={getPlayerColor(city.owner_id)}
               name={city.name}
+              isSelected={city.id === selectedCityId}
+              onClick={onCityClick ? () => onCityClick(city.id) : undefined}
             />
           ))}
           

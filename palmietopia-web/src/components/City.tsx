@@ -4,16 +4,33 @@ interface CityProps {
   size: number;
   ownerColor: string;
   name: string;
+  isSelected?: boolean;
+  onClick?: () => void;
 }
 
-export function City({ q, r, size, ownerColor, name }: CityProps) {
+export function City({ q, r, size, ownerColor, name, isSelected, onClick }: CityProps) {
   const x = size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
   const y = size * ((3 / 2) * r);
   
   const s = size * 0.4;
 
   return (
-    <g className="pointer-events-none">
+    <g 
+      className={onClick ? "cursor-pointer" : "pointer-events-none"}
+      onClick={onClick}
+    >
+      {/* Selection ring */}
+      {isSelected && (
+        <circle
+          cx={x}
+          cy={y}
+          r={size * 0.85}
+          fill="none"
+          stroke="#fbbf24"
+          strokeWidth="3"
+          strokeDasharray="6 3"
+        />
+      )}
       {/* Castle base */}
       <rect
         x={x - s * 0.8}

@@ -112,6 +112,7 @@ pub struct City {
     pub r: i32,
     pub name: String,
     pub is_capitol: bool,
+    pub produced_this_turn: bool,
 }
 
 // ============ Units ============
@@ -132,7 +133,13 @@ impl UnitType {
     /// Returns (max_hp, attack, defense)
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
-            UnitType::Conscript => (100, 20, 15),
+            UnitType::Conscript => (50, 25, 15),
+        }
+    }
+
+    pub fn cost(&self) -> u64 {
+        match self {
+            UnitType::Conscript => 25,
         }
     }
 }
@@ -177,6 +184,8 @@ impl Unit {
 
 pub const DEFAULT_BASE_TIME_MS: u64 = 120_000; // 2 minutes
 pub const DEFAULT_INCREMENT_MS: u64 = 45_000;  // 45 seconds
+pub const STARTING_GOLD: u64 = 50;
+pub const BASE_INCOME: u64 = 20;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum GameStatus {
@@ -196,6 +205,7 @@ pub struct GameSession {
     pub status: GameStatus,
     pub eliminated_players: Vec<String>,
     pub player_times_ms: Vec<u64>,
+    pub player_gold: Vec<u64>,
     pub turn_started_at_ms: u64,
     pub base_time_ms: u64,
     pub increment_ms: u64,
@@ -223,18 +233,17 @@ impl GameSession {
                     r: *city_r,
                     name: format!("{}'s Capital", player.name),
                     is_capitol: true,
+                    produced_this_turn: false,
                 });
                 
-                // Create conscript near city
-                if let Some((unit_q, unit_r)) = Self::find_adjacent_land_tile(&map, *city_q, *city_r) {
-                    units.push(Unit::new(
-                        format!("unit-{}-{}", player.id, 0),
-                        player.id.clone(),
-                        UnitType::Conscript,
-                        unit_q,
-                        unit_r,
-                    ));
-                }
+                // Create conscript in the capitol city
+                units.push(Unit::new(
+                    format!("unit-{}-{}", player.id, 0),
+                    player.id.clone(),
+                    UnitType::Conscript,
+                    *city_q,
+                    *city_r,
+                ));
             }
         }
         
@@ -248,6 +257,7 @@ impl GameSession {
             status: GameStatus::InProgress,
             eliminated_players: Vec::new(),
             player_times_ms: vec![DEFAULT_BASE_TIME_MS; player_count],
+            player_gold: vec![STARTING_GOLD; player_count],
             turn_started_at_ms: 0,
             base_time_ms: DEFAULT_BASE_TIME_MS,
             increment_ms: DEFAULT_INCREMENT_MS,
@@ -448,12 +458,74 @@ impl GameSession {
             return Err("Cannot fortify after moving".to_string());
         }
         
-        // Heal 25 HP, capped at max
-        let heal_amount = 25;
+        // Heal 25% of max HP
+        let heal_amount = unit.max_hp / 4;
         unit.hp = (unit.hp + heal_amount).min(unit.max_hp);
         unit.movement_remaining = 0;
         
         Ok(unit.hp)
+    }
+
+    pub fn buy_unit(&mut self, player_id: &str, city_id: &str, unit_type: UnitType) -> Result<Unit, String> {
+        // Find player index
+        let player_idx = self.players.iter().position(|p| p.id == player_id)
+            .ok_or("Player not found")?;
+        
+        // Find city
+        let city_idx = self.cities.iter().position(|c| c.id == city_id)
+            .ok_or("City not found")?;
+        
+        // Extract city info first to avoid borrow issues
+        let city = &self.cities[city_idx];
+        let city_q = city.q;
+        let city_r = city.r;
+        let city_owner = city.owner_id.clone();
+        let city_produced = city.produced_this_turn;
+        
+        // Validate ownership
+        if city_owner != player_id {
+            return Err("Not your city".to_string());
+        }
+        
+        // Check if city already produced this turn
+        if city_produced {
+            return Err("City has already produced this turn".to_string());
+        }
+        
+        // Check if city is unoccupied
+        if self.units.iter().any(|u| u.q == city_q && u.r == city_r) {
+            return Err("City is occupied by a unit".to_string());
+        }
+        
+        // Check gold
+        let cost = unit_type.cost();
+        if self.player_gold[player_idx] < cost {
+            return Err("Not enough gold".to_string());
+        }
+        
+        // Deduct gold
+        self.player_gold[player_idx] -= cost;
+        
+        // Mark city as produced
+        self.cities[city_idx].produced_this_turn = true;
+        
+        // Create unit with 0 movement - generate random ID
+        let mut rand_bytes = [0u8; 8];
+        getrandom::getrandom(&mut rand_bytes).unwrap();
+        let rand_num = u64::from_le_bytes(rand_bytes);
+        let unit_id = format!("unit-{}-{:x}", player_id, rand_num);
+        let mut unit = Unit::new(
+            unit_id,
+            player_id.to_string(),
+            unit_type,
+            city_q,
+            city_r,
+        );
+        unit.movement_remaining = 0; // Can't move on turn created
+        
+        self.units.push(unit.clone());
+        
+        Ok(unit)
     }
 
     pub fn end_current_turn(&mut self, time_used_ms: u64) {
@@ -461,6 +533,9 @@ impl GameSession {
         self.player_times_ms[current] = self.player_times_ms[current]
             .saturating_sub(time_used_ms)
             .saturating_add(self.increment_ms);
+        
+        // Grant income to the player who just finished their turn
+        self.player_gold[current] += BASE_INCOME;
         
         // Skip eliminated players
         loop {
@@ -478,6 +553,13 @@ impl GameSession {
         // Reset movement for the new current player
         let next_player_id = self.players[self.current_turn].id.clone();
         self.reset_movement_for_player(&next_player_id);
+        
+        // Reset production for new current player's cities
+        for city in self.cities.iter_mut() {
+            if city.owner_id == next_player_id {
+                city.produced_this_turn = false;
+            }
+        }
     }
 
     pub fn current_player_time(&self) -> u64 {
@@ -559,12 +641,16 @@ impl GameSession {
         // If defender died, move attacker and check for city capture
         let mut captured_city = None;
         let mut eliminated_player = None;
+        let mut attacker_new_q = None;
+        let mut attacker_new_r = None;
         
         if defender_died && !attacker_died {
             // Move attacker to defender's position
             if let Some(attacker) = self.units.iter_mut().find(|u| u.id == attacker_id) {
                 attacker.q = defender_pos.0;
                 attacker.r = defender_pos.1;
+                attacker_new_q = Some(defender_pos.0);
+                attacker_new_r = Some(defender_pos.1);
             }
             
             // Check for city capture using shared method
@@ -580,6 +666,8 @@ impl GameSession {
             damage_to_defender,
             attacker_died,
             defender_died,
+            attacker_new_q,
+            attacker_new_r,
             captured_city,
             eliminated_player,
         })
@@ -594,6 +682,8 @@ pub struct CombatOutcome {
     pub damage_to_defender: u32,
     pub attacker_died: bool,
     pub defender_died: bool,
+    pub attacker_new_q: Option<i32>,
+    pub attacker_new_r: Option<i32>,
     pub captured_city: Option<City>,
     pub eliminated_player: Option<String>,
 }
@@ -620,6 +710,7 @@ pub enum ClientMessage {
     MoveUnit { game_id: String, player_id: String, unit_id: String, to_q: i32, to_r: i32 },
     AttackUnit { game_id: String, player_id: String, attacker_id: String, defender_id: String },
     FortifyUnit { game_id: String, player_id: String, unit_id: String },
+    BuyUnit { game_id: String, player_id: String, city_id: String, unit_type: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -633,7 +724,7 @@ pub enum ServerMessage {
     GameRejoined { game: GameSession },
     PlayerLeft { player_id: String },
     Error { message: String },
-    TurnChanged { current_turn: usize, player_times_ms: Vec<u64>, units: Vec<Unit> },
+    TurnChanged { current_turn: usize, player_times_ms: Vec<u64>, player_gold: Vec<u64>, units: Vec<Unit>, cities: Vec<City> },
     TimeTick { player_index: usize, remaining_ms: u64 },
     UnitMoved { unit_id: String, to_q: i32, to_r: i32, movement_remaining: u32 },
     CombatResult {
@@ -645,11 +736,14 @@ pub enum ServerMessage {
         damage_to_defender: u32,
         attacker_died: bool,
         defender_died: bool,
+        attacker_new_q: Option<i32>,
+        attacker_new_r: Option<i32>,
     },
     PlayerEliminated { player_id: String, conquerer_id: String },
     CitiesCaptured { cities: Vec<City> },
     GameOver { winner_id: String },
     UnitFortified { unit_id: String, new_hp: u32 },
+    UnitPurchased { unit: Unit, city_id: String, player_gold: u64 },
 }
 
 /// Terrain types for map tiles

@@ -78,7 +78,9 @@ impl GameManager {
         let msg = ServerMessage::TurnChanged {
             current_turn: active_game.game.current_turn,
             player_times_ms: active_game.game.player_times_ms.clone(),
+            player_gold: active_game.game.player_gold.clone(),
             units: active_game.game.units.clone(),
+            cities: active_game.game.cities.clone(),
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
@@ -193,6 +195,8 @@ impl GameManager {
             damage_to_defender: outcome.damage_to_defender,
             attacker_died: outcome.attacker_died,
             defender_died: outcome.defender_died,
+            attacker_new_q: outcome.attacker_new_q,
+            attacker_new_r: outcome.attacker_new_r,
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
@@ -257,6 +261,40 @@ impl GameManager {
         Ok(new_hp)
     }
 
+    pub async fn buy_unit(&self, game_id: &str, player_id: &str, city_id: &str, unit_type: palmietopia_core::UnitType) -> Result<(palmietopia_core::Unit, u64), String> {
+        tracing::info!("buy_unit called: game_id={}, player_id={}, city_id={}, unit_type={:?}", 
+            game_id, player_id, city_id, unit_type);
+        
+        let mut games = self.active_games.write().await;
+        let active_game = games.get_mut(game_id).ok_or_else(|| {
+            tracing::error!("Game not found: {}", game_id);
+            "Game not found".to_string()
+        })?;
+
+        // Verify it's this player's turn
+        let current_player = &active_game.game.players[active_game.game.current_turn];
+        if current_player.id != player_id {
+            return Err("Not your turn".to_string());
+        }
+
+        // Buy the unit
+        let unit = active_game.game.buy_unit(player_id, city_id, unit_type)?;
+        
+        // Get player's new gold amount
+        let player_idx = active_game.game.players.iter().position(|p| p.id == player_id).unwrap();
+        let player_gold = active_game.game.player_gold[player_idx];
+
+        // Broadcast the purchase to all players
+        let msg = ServerMessage::UnitPurchased {
+            unit: unit.clone(),
+            city_id: city_id.to_string(),
+            player_gold,
+        };
+        let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
+
+        Ok((unit, player_gold))
+    }
+
     pub fn get_channel(&self, game_id: &str) -> Option<broadcast::Sender<String>> {
         let _ = game_id;
         None
@@ -313,7 +351,9 @@ async fn run_game_timer(game_id: String, games: Arc<RwLock<HashMap<String, Activ
                     let turn_msg = ServerMessage::TurnChanged {
                         current_turn: active_game.game.current_turn,
                         player_times_ms: active_game.game.player_times_ms.clone(),
+                        player_gold: active_game.game.player_gold.clone(),
                         units: active_game.game.units.clone(),
+                        cities: active_game.game.cities.clone(),
                     };
                     let _ = active_game.channel.send(serde_json::to_string(&turn_msg).unwrap());
                 }
