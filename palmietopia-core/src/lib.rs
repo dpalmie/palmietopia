@@ -6,6 +6,155 @@ pub fn get_welcome_message() -> String {
     "Welcome to Palmietopia!".to_string()
 }
 
+// ============ Map Size ============
+
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub enum MapSize {
+    Tiny,
+    Small,
+    Medium,
+    Large,
+    Huge,
+}
+
+impl MapSize {
+    pub fn radius(&self) -> u32 {
+        match self {
+            MapSize::Tiny => 2,
+            MapSize::Small => 4,
+            MapSize::Medium => 6,
+            MapSize::Large => 8,
+            MapSize::Huge => 10,
+        }
+    }
+}
+
+// ============ Player ============
+
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub enum PlayerColor {
+    Red,
+    Blue,
+    Green,
+    Yellow,
+    Purple,
+}
+
+impl PlayerColor {
+    pub fn from_index(index: usize) -> Self {
+        match index % 5 {
+            0 => PlayerColor::Red,
+            1 => PlayerColor::Blue,
+            2 => PlayerColor::Green,
+            3 => PlayerColor::Yellow,
+            _ => PlayerColor::Purple,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Player {
+    pub id: String,
+    pub name: String,
+    pub color: PlayerColor,
+}
+
+// ============ Lobby ============
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum LobbyStatus {
+    Waiting,
+    Starting,
+    InGame,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Lobby {
+    pub id: String,
+    pub host_id: String,
+    pub players: Vec<Player>,
+    pub map_size: MapSize,
+    pub max_players: u8,
+    pub status: LobbyStatus,
+}
+
+impl Lobby {
+    pub fn new(id: String, host: Player, map_size: MapSize) -> Self {
+        let host_id = host.id.clone();
+        Self {
+            id,
+            host_id,
+            players: vec![host],
+            map_size,
+            max_players: 5,
+            status: LobbyStatus::Waiting,
+        }
+    }
+
+    pub fn can_join(&self) -> bool {
+        self.players.len() < self.max_players as usize && self.status == LobbyStatus::Waiting
+    }
+
+    pub fn can_start(&self) -> bool {
+        self.players.len() >= 2 && self.status == LobbyStatus::Waiting
+    }
+}
+
+// ============ Game Session ============
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum GameStatus {
+    InProgress,
+    Finished,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GameSession {
+    pub id: String,
+    pub map: GameMap,
+    pub players: Vec<Player>,
+    pub current_turn: usize,
+    pub status: GameStatus,
+}
+
+impl GameSession {
+    pub fn from_lobby(lobby: &Lobby) -> Self {
+        let map = GameMap::generate(lobby.map_size.radius());
+        Self {
+            id: lobby.id.clone(),
+            map,
+            players: lobby.players.clone(),
+            current_turn: 0,
+            status: GameStatus::InProgress,
+        }
+    }
+}
+
+// ============ Messages ============
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ClientMessage {
+    CreateLobby { player_name: String, map_size: MapSize },
+    JoinLobby { lobby_id: String, player_name: String },
+    LeaveLobby,
+    StartGame,
+    ListLobbies,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ServerMessage {
+    LobbyCreated { lobby_id: String, player_id: String },
+    LobbyUpdated { lobby: Lobby },
+    LobbyList { lobbies: Vec<Lobby> },
+    GameStarted { game: GameSession },
+    PlayerLeft { player_id: String },
+    Error { message: String },
+}
+
 /// Terrain types for map tiles
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -42,7 +191,7 @@ pub struct Tile {
 }
 
 /// The game map containing all tiles
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GameMap {
     pub tiles: Vec<Tile>,
     pub radius: u32,
