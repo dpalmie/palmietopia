@@ -366,17 +366,43 @@ async fn handle_client_message(
                 game_id, msg_player_id, unit_id, to_q, to_r);
             
             match state.game_manager.move_unit(&game_id, &msg_player_id, &unit_id, to_q, to_r).await {
-                Ok(movement_remaining) => {
-                    tracing::info!("MoveUnit succeeded, movement_remaining={}", movement_remaining);
+                Ok(outcome) => {
+                    tracing::info!("MoveUnit succeeded, movement_remaining={}", outcome.movement_remaining);
+                    // Server already broadcasts via channel, return message for this client
                     Some(ServerMessage::UnitMoved {
                         unit_id,
                         to_q,
                         to_r,
-                        movement_remaining,
+                        movement_remaining: outcome.movement_remaining,
                     })
                 }
                 Err(e) => {
                     tracing::error!("MoveUnit failed: {}", e);
+                    Some(ServerMessage::Error { message: e })
+                }
+            }
+        }
+
+        ClientMessage::AttackUnit { game_id, player_id: msg_player_id, attacker_id, defender_id } => {
+            tracing::info!("AttackUnit received: game_id={}, attacker={}, defender={}", 
+                game_id, attacker_id, defender_id);
+            
+            match state.game_manager.attack_unit(&game_id, &msg_player_id, &attacker_id, &defender_id).await {
+                Ok(outcome) => {
+                    tracing::info!("AttackUnit succeeded: {:?}", outcome);
+                    Some(ServerMessage::CombatResult {
+                        attacker_id,
+                        defender_id,
+                        attacker_hp: outcome.attacker_hp,
+                        defender_hp: outcome.defender_hp,
+                        damage_to_attacker: outcome.damage_to_attacker,
+                        damage_to_defender: outcome.damage_to_defender,
+                        attacker_died: outcome.attacker_died,
+                        defender_died: outcome.defender_died,
+                    })
+                }
+                Err(e) => {
+                    tracing::error!("AttackUnit failed: {}", e);
                     Some(ServerMessage::Error { message: e })
                 }
             }

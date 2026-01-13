@@ -35,6 +35,7 @@ export interface City {
   q: number;
   r: number;
   name: string;
+  is_capitol: boolean;
 }
 
 export interface Unit {
@@ -44,6 +45,8 @@ export interface Unit {
   q: number;
   r: number;
   movement_remaining: number;
+  hp: number;
+  max_hp: number;
 }
 
 export interface GameSession {
@@ -53,7 +56,8 @@ export interface GameSession {
   cities: City[];
   units: Unit[];
   current_turn: number;
-  status: string;
+  status: string | { Victory: { winner_id: string } };
+  eliminated_players: string[];
   player_times_ms: number[];
   turn_started_at_ms: number;
   base_time_ms: number;
@@ -71,7 +75,11 @@ export type ServerMessage =
   | { type: "Error"; message: string }
   | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; units: Unit[] }
   | { type: "TimeTick"; player_index: number; remaining_ms: number }
-  | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number };
+  | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number }
+  | { type: "CombatResult"; attacker_id: string; defender_id: string; attacker_hp: number; defender_hp: number; damage_to_attacker: number; damage_to_defender: number; attacker_died: boolean; defender_died: boolean }
+  | { type: "PlayerEliminated"; player_id: string; conquerer_id: string }
+  | { type: "CitiesCaptured"; cities: City[] }
+  | { type: "GameOver"; winner_id: string };
 
 export type ClientMessage =
   | { type: "CreateLobby"; player_name: string; map_size: MapSize }
@@ -81,7 +89,8 @@ export type ClientMessage =
   | { type: "ListLobbies" }
   | { type: "EndTurn"; game_id: string; player_id: string }
   | { type: "RejoinGame"; game_id: string; player_id: string }
-  | { type: "MoveUnit"; game_id: string; player_id: string; unit_id: string; to_q: number; to_r: number };
+  | { type: "MoveUnit"; game_id: string; player_id: string; unit_id: string; to_q: number; to_r: number }
+  | { type: "AttackUnit"; game_id: string; player_id: string; attacker_id: string; defender_id: string };
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001/ws";
 
@@ -191,6 +200,48 @@ export function useWebSocket() {
               };
             });
             break;
+          case "CombatResult":
+            console.log("CombatResult received:", msg);
+            setGame((prev) => {
+              if (!prev) return null;
+              let newUnits = prev.units.map((u) => {
+                if (u.id === msg.attacker_id) {
+                  return { ...u, hp: msg.attacker_hp, movement_remaining: 0 };
+                }
+                if (u.id === msg.defender_id) {
+                  return { ...u, hp: msg.defender_hp };
+                }
+                return u;
+              });
+              // Remove dead units
+              if (msg.attacker_died) {
+                newUnits = newUnits.filter(u => u.id !== msg.attacker_id);
+              }
+              if (msg.defender_died) {
+                newUnits = newUnits.filter(u => u.id !== msg.defender_id);
+              }
+              return { ...prev, units: newUnits };
+            });
+            break;
+          case "PlayerEliminated":
+            console.log("PlayerEliminated:", msg);
+            setGame((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                eliminated_players: [...(prev.eliminated_players || []), msg.player_id],
+                units: prev.units.filter(u => u.owner_id !== msg.player_id),
+              };
+            });
+            break;
+          case "CitiesCaptured":
+            console.log("CitiesCaptured:", msg);
+            setGame((prev) => prev ? { ...prev, cities: msg.cities } : null);
+            break;
+          case "GameOver":
+            console.log("GameOver! Winner:", msg.winner_id);
+            setGame((prev) => prev ? { ...prev, status: { Victory: { winner_id: msg.winner_id } } } : null);
+            break;
           case "PlayerLeft":
             break;
           case "Error":
@@ -255,6 +306,11 @@ export function useWebSocket() {
     send({ type: "MoveUnit", game_id: gameId, player_id: playerId, unit_id: unitId, to_q: toQ, to_r: toR });
   }, [send]);
 
+  const attackUnit = useCallback((gameId: string, playerId: string, attackerId: string, defenderId: string) => {
+    console.log("Sending AttackUnit:", { gameId, playerId, attackerId, defenderId });
+    send({ type: "AttackUnit", game_id: gameId, player_id: playerId, attacker_id: attackerId, defender_id: defenderId });
+  }, [send]);
+
   return {
     isConnected,
     playerId,
@@ -271,6 +327,7 @@ export function useWebSocket() {
     endTurn,
     rejoinGame,
     moveUnit,
+    attackUnit,
     setError,
     setCurrentLobby,
     setGame,

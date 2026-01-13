@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { HexGrid } from "@/components/HexGrid";
+import { GameOverDialog } from "@/components/GameOverDialog";
 import { useWebSocket, GameSession, Unit } from "@/hooks/useWebSocket";
 import { PLAYER_COLORS } from "@/types/game";
 
@@ -39,6 +40,7 @@ export default function GamePage() {
     endTurn,
     rejoinGame,
     moveUnit,
+    attackUnit,
   } = useWebSocket();
 
   const [initialGame, setInitialGame] = useState<GameSession | null>(null);
@@ -131,12 +133,29 @@ export default function GamePage() {
   const handleUnitClick = useCallback((unitId: string) => {
     if (!currentGame || !myPlayerId) return;
     
-    const unit = (currentGame.units || []).find(u => u.id === unitId);
-    if (!unit) return;
+    const clickedUnit = (currentGame.units || []).find(u => u.id === unitId);
+    if (!clickedUnit) return;
+    
+    const currentPlayer = currentGame.players[currentGame.current_turn];
+    const isMyTurn = currentPlayer.id === myPlayerId;
+    
+    // If we have a unit selected and click an enemy unit, try to attack
+    if (selectedUnitId && clickedUnit.owner_id !== myPlayerId && isMyTurn) {
+      const myUnit = (currentGame.units || []).find(u => u.id === selectedUnitId);
+      if (myUnit && myUnit.movement_remaining > 0) {
+        // Check if adjacent
+        const distance = hexDistance(myUnit.q, myUnit.r, clickedUnit.q, clickedUnit.r);
+        if (distance === 1) {
+          attackUnit(gameId, myPlayerId, selectedUnitId, unitId);
+          setSelectedUnitId(null);
+          setHighlightedTiles([]);
+          return;
+        }
+      }
+    }
     
     // Can only select own units on your turn
-    const currentPlayer = currentGame.players[currentGame.current_turn];
-    if (currentPlayer.id !== myPlayerId || unit.owner_id !== myPlayerId) {
+    if (!isMyTurn || clickedUnit.owner_id !== myPlayerId) {
       setSelectedUnitId(null);
       setHighlightedTiles([]);
       return;
@@ -149,9 +168,9 @@ export default function GamePage() {
     } else {
       // Select and show movement options
       setSelectedUnitId(unitId);
-      setHighlightedTiles(calculateMovementTiles(unit));
+      setHighlightedTiles(calculateMovementTiles(clickedUnit));
     }
-  }, [currentGame, myPlayerId, selectedUnitId, calculateMovementTiles]);
+  }, [currentGame, myPlayerId, selectedUnitId, calculateMovementTiles, gameId, attackUnit]);
 
   const handleTileClick = useCallback((q: number, r: number) => {
     if (!selectedUnitId || !myPlayerId || !currentGame) return;
@@ -227,6 +246,10 @@ export default function GamePage() {
   const isMyTurn = currentPlayer?.id === myPlayerId;
   const timeRemaining = turnTimeRemaining || localTimeRemaining;
   const isLowTime = timeRemaining < 30000;
+  const isEliminated = (currentGame.eliminated_players || []).includes(myPlayerId || "");
+  const isVictory = typeof currentGame.status === "object" && "Victory" in currentGame.status;
+  const winnerId = isVictory ? (currentGame.status as { Victory: { winner_id: string } }).Victory.winner_id : null;
+  const winnerName = winnerId ? currentGame.players.find(p => p.id === winnerId)?.name || null : null;
 
   return (
     <div className="flex h-screen flex-col bg-zinc-900">
@@ -267,23 +290,27 @@ export default function GamePage() {
         {currentGame.players.map((player, index) => {
           const isCurrentTurn = index === currentGame.current_turn;
           const isMe = player.id === myPlayerId;
+          const isPlayerEliminated = (currentGame.eliminated_players || []).includes(player.id);
           
           return (
             <div
               key={player.id}
               className={`flex items-center gap-2 px-3 py-1.5 rounded transition-colors ${
-                isCurrentTurn ? "bg-zinc-700 ring-2 ring-emerald-500" : ""
+                isPlayerEliminated ? "opacity-40" : ""
+              } ${
+                isCurrentTurn && !isPlayerEliminated ? "bg-zinc-700 ring-2 ring-emerald-500" : ""
               }`}
             >
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: PLAYER_COLORS[player.color] || "#888" }}
               />
-              <span className={`text-sm ${isCurrentTurn ? "text-zinc-50 font-medium" : "text-zinc-400"}`}>
+              <span className={`text-sm ${isPlayerEliminated ? "line-through text-zinc-500" : isCurrentTurn ? "text-zinc-50 font-medium" : "text-zinc-400"}`}>
                 {player.name}
                 {isMe && " (You)"}
+                {isPlayerEliminated && " [Eliminated]"}
               </span>
-              {isCurrentTurn && (
+              {isCurrentTurn && !isPlayerEliminated && (
                 <span className="text-xs text-emerald-400 ml-1">●</span>
               )}
             </div>
@@ -292,9 +319,14 @@ export default function GamePage() {
       </div>
 
       {/* Instructions */}
-      {isMyTurn && (
+      {isMyTurn && !isEliminated && (
         <div className="px-4 py-2 bg-emerald-900/30 text-emerald-300 text-sm text-center">
-          Your turn! Click a unit to select it, then click a highlighted tile to move.
+          Your turn! Click a unit to select it, then click a tile to move or an enemy unit to attack.
+        </div>
+      )}
+      {isEliminated && (
+        <div className="px-4 py-2 bg-red-900/30 text-red-300 text-sm text-center">
+          You have been eliminated! Your capitol was captured.
         </div>
       )}
 
@@ -311,6 +343,14 @@ export default function GamePage() {
           onUnitClick={handleUnitClick}
         />
       </main>
+
+      {isVictory && (
+        <GameOverDialog
+          isWinner={winnerId === myPlayerId}
+          winnerName={winnerName}
+          onClose={() => router.push("/multiplayer")}
+        />
+      )}
     </div>
   );
 }

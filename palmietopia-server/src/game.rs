@@ -90,7 +90,7 @@ impl GameManager {
         games.get(game_id).map(|g| g.game.clone())
     }
 
-    pub async fn move_unit(&self, game_id: &str, player_id: &str, unit_id: &str, to_q: i32, to_r: i32) -> Result<u32, String> {
+    pub async fn move_unit(&self, game_id: &str, player_id: &str, unit_id: &str, to_q: i32, to_r: i32) -> Result<palmietopia_core::MoveOutcome, String> {
         tracing::info!("move_unit called: game_id={}, player_id={}, unit_id={}", game_id, player_id, unit_id);
         
         let mut games = self.active_games.write().await;
@@ -113,19 +113,113 @@ impl GameManager {
             return Err("Not your unit".to_string());
         }
 
-        // Perform the move (validates and updates position)
-        let movement_remaining = active_game.game.move_unit(unit_id, to_q, to_r)?;
+        // Perform the move (validates and updates position, may capture city)
+        let outcome = active_game.game.move_unit(unit_id, to_q, to_r)?;
 
         // Broadcast the move to all players
         let msg = ServerMessage::UnitMoved {
             unit_id: unit_id.to_string(),
             to_q,
             to_r,
-            movement_remaining,
+            movement_remaining: outcome.movement_remaining,
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
-        Ok(movement_remaining)
+        // If a player was eliminated, broadcast that
+        if let Some(ref eliminated_id) = outcome.eliminated_player {
+            let elim_msg = ServerMessage::PlayerEliminated {
+                player_id: eliminated_id.clone(),
+                conquerer_id: player_id.to_string(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&elim_msg).unwrap());
+
+            // Broadcast updated cities
+            let cities_msg = ServerMessage::CitiesCaptured {
+                cities: active_game.game.cities.clone(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&cities_msg).unwrap());
+        } else if outcome.captured_city.is_some() {
+            // Just a regular city capture (non-capitol)
+            let cities_msg = ServerMessage::CitiesCaptured {
+                cities: active_game.game.cities.clone(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&cities_msg).unwrap());
+        }
+
+        // If game is over, broadcast victory
+        if let palmietopia_core::GameStatus::Victory { ref winner_id } = active_game.game.status {
+            let victory_msg = ServerMessage::GameOver {
+                winner_id: winner_id.clone(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&victory_msg).unwrap());
+        }
+
+        Ok(outcome)
+    }
+
+    pub async fn attack_unit(&self, game_id: &str, player_id: &str, attacker_id: &str, defender_id: &str) -> Result<palmietopia_core::CombatOutcome, String> {
+        tracing::info!("attack_unit called: game_id={}, player_id={}, attacker={}, defender={}", 
+            game_id, player_id, attacker_id, defender_id);
+        
+        let mut games = self.active_games.write().await;
+        let active_game = games.get_mut(game_id).ok_or_else(|| {
+            tracing::error!("Game not found: {}", game_id);
+            "Game not found".to_string()
+        })?;
+
+        // Verify it's this player's turn
+        let current_player = &active_game.game.players[active_game.game.current_turn];
+        if current_player.id != player_id {
+            return Err("Not your turn".to_string());
+        }
+
+        // Verify the attacker belongs to the player
+        let attacker = active_game.game.units.iter().find(|u| u.id == attacker_id)
+            .ok_or("Attacker not found")?;
+        if attacker.owner_id != player_id {
+            return Err("Not your unit".to_string());
+        }
+
+        // Resolve combat
+        let outcome = active_game.game.resolve_combat(attacker_id, defender_id)?;
+
+        // Broadcast combat result
+        let msg = ServerMessage::CombatResult {
+            attacker_id: attacker_id.to_string(),
+            defender_id: defender_id.to_string(),
+            attacker_hp: outcome.attacker_hp,
+            defender_hp: outcome.defender_hp,
+            damage_to_attacker: outcome.damage_to_attacker,
+            damage_to_defender: outcome.damage_to_defender,
+            attacker_died: outcome.attacker_died,
+            defender_died: outcome.defender_died,
+        };
+        let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
+
+        // If a player was eliminated, broadcast that too
+        if let Some(ref eliminated_id) = outcome.eliminated_player {
+            let elim_msg = ServerMessage::PlayerEliminated {
+                player_id: eliminated_id.clone(),
+                conquerer_id: player_id.to_string(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&elim_msg).unwrap());
+
+            // Broadcast updated cities
+            let cities_msg = ServerMessage::CitiesCaptured {
+                cities: active_game.game.cities.clone(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&cities_msg).unwrap());
+        }
+
+        // If game is over, broadcast victory
+        if let palmietopia_core::GameStatus::Victory { ref winner_id } = active_game.game.status {
+            let victory_msg = ServerMessage::GameOver {
+                winner_id: winner_id.clone(),
+            };
+            let _ = active_game.channel.send(serde_json::to_string(&victory_msg).unwrap());
+        }
+
+        Ok(outcome)
     }
 
     pub fn get_channel(&self, game_id: &str) -> Option<broadcast::Sender<String>> {

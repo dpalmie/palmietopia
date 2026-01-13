@@ -7,13 +7,17 @@ interface UnitProps {
   isSelected?: boolean;
   onClick?: () => void;
   movementRemaining: number;
+  hp: number;
+  maxHp: number;
 }
 
-export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, movementRemaining }: UnitProps) {
+export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, movementRemaining, hp, maxHp }: UnitProps) {
   const x = size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
   const y = size * ((3 / 2) * r);
   
   const s = size * 0.35;
+  const hpPercent = maxHp > 0 ? hp / maxHp : 0;
+  const hpColor = hpPercent > 0.6 ? "#4CAF50" : hpPercent > 0.3 ? "#FF9800" : "#F44336";
 
   const renderConscript = () => (
     <g>
@@ -95,6 +99,39 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
       )}
       
       {unitType === "Conscript" && renderConscript()}
+      
+      {/* HP Bar */}
+      <g transform={`translate(${x - s * 0.8}, ${y - s * 1.8})`}>
+        {/* Background */}
+        <rect
+          x="0"
+          y="0"
+          width={s * 1.6}
+          height={s * 0.25}
+          fill="#333"
+          rx="2"
+        />
+        {/* HP fill */}
+        <rect
+          x="0"
+          y="0"
+          width={s * 1.6 * hpPercent}
+          height={s * 0.25}
+          fill={hpColor}
+          rx="2"
+        />
+        {/* Border */}
+        <rect
+          x="0"
+          y="0"
+          width={s * 1.6}
+          height={s * 0.25}
+          fill="none"
+          stroke="#000"
+          strokeWidth="0.5"
+          rx="2"
+        />
+      </g>
       
       {/* Movement indicator */}
       <g transform={`translate(${x + s * 0.8}, ${y + s * 0.8})`}>

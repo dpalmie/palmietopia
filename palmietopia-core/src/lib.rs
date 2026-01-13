@@ -111,6 +111,7 @@ pub struct City {
     pub q: i32,
     pub r: i32,
     pub name: String,
+    pub is_capitol: bool,
 }
 
 // ============ Units ============
@@ -127,6 +128,13 @@ impl UnitType {
             UnitType::Conscript => 2,
         }
     }
+
+    /// Returns (max_hp, attack, defense)
+    pub fn stats(&self) -> (u32, u32, u32) {
+        match self {
+            UnitType::Conscript => (100, 20, 15),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,10 +145,13 @@ pub struct Unit {
     pub q: i32,
     pub r: i32,
     pub movement_remaining: u32,
+    pub hp: u32,
+    pub max_hp: u32,
 }
 
 impl Unit {
     pub fn new(id: String, owner_id: String, unit_type: UnitType, q: i32, r: i32) -> Self {
+        let (max_hp, _, _) = unit_type.stats();
         Self {
             id,
             owner_id,
@@ -148,7 +159,17 @@ impl Unit {
             q,
             r,
             movement_remaining: unit_type.base_movement(),
+            hp: max_hp,
+            max_hp,
         }
+    }
+
+    pub fn attack(&self) -> u32 {
+        self.unit_type.stats().1
+    }
+
+    pub fn defense(&self) -> u32 {
+        self.unit_type.stats().2
     }
 }
 
@@ -160,6 +181,7 @@ pub const DEFAULT_INCREMENT_MS: u64 = 45_000;  // 45 seconds
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum GameStatus {
     InProgress,
+    Victory { winner_id: String },
     Finished,
 }
 
@@ -172,6 +194,7 @@ pub struct GameSession {
     pub units: Vec<Unit>,
     pub current_turn: usize,
     pub status: GameStatus,
+    pub eliminated_players: Vec<String>,
     pub player_times_ms: Vec<u64>,
     pub turn_started_at_ms: u64,
     pub base_time_ms: u64,
@@ -192,13 +215,14 @@ impl GameSession {
         
         for (i, player) in lobby.players.iter().enumerate() {
             if let Some((city_q, city_r)) = starting_positions.get(i) {
-                // Create city
+                // Create capitol city
                 cities.push(City {
                     id: format!("city-{}-{}", player.id, i),
                     owner_id: player.id.clone(),
                     q: *city_q,
                     r: *city_r,
                     name: format!("{}'s Capital", player.name),
+                    is_capitol: true,
                 });
                 
                 // Create conscript near city
@@ -222,6 +246,7 @@ impl GameSession {
             units,
             current_turn: 0,
             status: GameStatus::InProgress,
+            eliminated_players: Vec::new(),
             player_times_ms: vec![DEFAULT_BASE_TIME_MS; player_count],
             turn_started_at_ms: 0,
             base_time_ms: DEFAULT_BASE_TIME_MS,
@@ -332,17 +357,78 @@ impl GameSession {
         Ok(cost)
     }
 
-    pub fn move_unit(&mut self, unit_id: &str, to_q: i32, to_r: i32) -> Result<u32, String> {
+    pub fn move_unit(&mut self, unit_id: &str, to_q: i32, to_r: i32) -> Result<MoveOutcome, String> {
         let cost = self.can_move_unit(unit_id, to_q, to_r)?;
         
         let unit = self.units.iter_mut().find(|u| u.id == unit_id)
             .ok_or("Unit not found")?;
         
+        let attacker_owner = unit.owner_id.clone();
         unit.q = to_q;
         unit.r = to_r;
         unit.movement_remaining -= cost;
+        let movement_remaining = unit.movement_remaining;
         
-        Ok(unit.movement_remaining)
+        // Check for city capture
+        let (captured_city, eliminated_player) = self.try_capture_city(to_q, to_r, &attacker_owner);
+        
+        Ok(MoveOutcome {
+            movement_remaining,
+            captured_city,
+            eliminated_player,
+        })
+    }
+    
+    /// Try to capture a city at the given position. Returns (captured_city, eliminated_player).
+    fn try_capture_city(&mut self, q: i32, r: i32, new_owner: &str) -> (Option<City>, Option<String>) {
+        let city_idx = self.cities.iter().position(|c| c.q == q && c.r == r);
+        
+        let Some(idx) = city_idx else {
+            return (None, None);
+        };
+        
+        let old_owner = self.cities[idx].owner_id.clone();
+        
+        // Can't capture your own city
+        if old_owner == new_owner {
+            return (None, None);
+        }
+        
+        let is_capitol = self.cities[idx].is_capitol;
+        let mut eliminated_player = None;
+        
+        if is_capitol {
+            // Eliminate the player!
+            eliminated_player = Some(old_owner.clone());
+            self.eliminated_players.push(old_owner.clone());
+            
+            // Transfer all their cities
+            for c in self.cities.iter_mut() {
+                if c.owner_id == old_owner {
+                    c.owner_id = new_owner.to_string();
+                    if c.is_capitol && !(c.q == q && c.r == r) {
+                        c.is_capitol = false;
+                    }
+                }
+            }
+            
+            // Remove all their units
+            self.units.retain(|u| u.owner_id != old_owner);
+            
+            // Check for victory
+            let remaining_players: Vec<_> = self.players.iter()
+                .filter(|p| !self.eliminated_players.contains(&p.id))
+                .collect();
+            if remaining_players.len() == 1 {
+                self.status = GameStatus::Victory { winner_id: remaining_players[0].id.clone() };
+            }
+        } else {
+            // Just capture the city
+            self.cities[idx].owner_id = new_owner.to_string();
+        }
+        
+        let captured_city = Some(self.cities[idx].clone());
+        (captured_city, eliminated_player)
     }
 
     pub fn reset_movement_for_player(&mut self, player_id: &str) {
@@ -358,7 +444,19 @@ impl GameSession {
         self.player_times_ms[current] = self.player_times_ms[current]
             .saturating_sub(time_used_ms)
             .saturating_add(self.increment_ms);
-        self.current_turn = (current + 1) % self.players.len();
+        
+        // Skip eliminated players
+        loop {
+            self.current_turn = (self.current_turn + 1) % self.players.len();
+            let next_player_id = &self.players[self.current_turn].id;
+            if !self.eliminated_players.contains(next_player_id) {
+                break;
+            }
+            // Safety: if all players eliminated except one, we'd have victory already
+            if self.current_turn == current {
+                break;
+            }
+        }
         
         // Reset movement for the new current player
         let next_player_id = self.players[self.current_turn].id.clone();
@@ -368,6 +466,126 @@ impl GameSession {
     pub fn current_player_time(&self) -> u64 {
         self.player_times_ms[self.current_turn]
     }
+
+    /// Check if a unit is garrisoned (standing on own city)
+    pub fn is_unit_garrisoned(&self, unit: &Unit) -> bool {
+        self.cities.iter().any(|c| c.q == unit.q && c.r == unit.r && c.owner_id == unit.owner_id)
+    }
+
+    /// Get effective defense for a unit (with garrison bonus)
+    pub fn effective_defense(&self, unit: &Unit) -> u32 {
+        let base = unit.defense();
+        if self.is_unit_garrisoned(unit) {
+            base + base / 2 // +50% defense when garrisoned
+        } else {
+            base
+        }
+    }
+
+    /// Combat result struct
+    pub fn resolve_combat(&mut self, attacker_id: &str, defender_id: &str) -> Result<CombatOutcome, String> {
+        // Find units
+        let attacker_idx = self.units.iter().position(|u| u.id == attacker_id)
+            .ok_or("Attacker not found")?;
+        let defender_idx = self.units.iter().position(|u| u.id == defender_id)
+            .ok_or("Defender not found")?;
+        
+        // Check they are adjacent
+        let attacker = &self.units[attacker_idx];
+        let defender = &self.units[defender_idx];
+        let distance = Self::hex_distance(attacker.q, attacker.r, defender.q, defender.r);
+        if distance != 1 {
+            return Err("Units must be adjacent to attack".to_string());
+        }
+        
+        // Check attacker has movement
+        if attacker.movement_remaining == 0 {
+            return Err("No movement remaining to attack".to_string());
+        }
+        
+        // Calculate damage
+        let attacker_attack = self.units[attacker_idx].attack();
+        let defender_effective_def = self.effective_defense(&self.units[defender_idx]);
+        let attacker_def = self.units[attacker_idx].defense();
+        let defender_attack = self.units[defender_idx].attack();
+        
+        // Damage formula: attack * 30 / (30 + defense)
+        let damage_to_defender = attacker_attack * 30 / (30 + defender_effective_def);
+        let damage_to_attacker = defender_attack * 30 / (30 + attacker_def) / 2; // Counterattack is weaker
+        
+        // Apply damage
+        self.units[defender_idx].hp = self.units[defender_idx].hp.saturating_sub(damage_to_defender);
+        self.units[attacker_idx].hp = self.units[attacker_idx].hp.saturating_sub(damage_to_attacker);
+        
+        // Consume all movement on attack
+        self.units[attacker_idx].movement_remaining = 0;
+        
+        let attacker_hp = self.units[attacker_idx].hp;
+        let defender_hp = self.units[defender_idx].hp;
+        let defender_pos = (self.units[defender_idx].q, self.units[defender_idx].r);
+        let attacker_owner = self.units[attacker_idx].owner_id.clone();
+        
+        // Remove dead units
+        let mut attacker_died = false;
+        let mut defender_died = false;
+        
+        if defender_hp == 0 {
+            defender_died = true;
+            self.units.remove(defender_idx);
+        }
+        if attacker_hp == 0 {
+            attacker_died = true;
+            let idx = self.units.iter().position(|u| u.id == attacker_id).unwrap();
+            self.units.remove(idx);
+        }
+        
+        // If defender died, move attacker and check for city capture
+        let mut captured_city = None;
+        let mut eliminated_player = None;
+        
+        if defender_died && !attacker_died {
+            // Move attacker to defender's position
+            if let Some(attacker) = self.units.iter_mut().find(|u| u.id == attacker_id) {
+                attacker.q = defender_pos.0;
+                attacker.r = defender_pos.1;
+            }
+            
+            // Check for city capture using shared method
+            let (cap_city, elim_player) = self.try_capture_city(defender_pos.0, defender_pos.1, &attacker_owner);
+            captured_city = cap_city;
+            eliminated_player = elim_player;
+        }
+        
+        Ok(CombatOutcome {
+            attacker_hp,
+            defender_hp,
+            damage_to_attacker,
+            damage_to_defender,
+            attacker_died,
+            defender_died,
+            captured_city,
+            eliminated_player,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CombatOutcome {
+    pub attacker_hp: u32,
+    pub defender_hp: u32,
+    pub damage_to_attacker: u32,
+    pub damage_to_defender: u32,
+    pub attacker_died: bool,
+    pub defender_died: bool,
+    pub captured_city: Option<City>,
+    pub eliminated_player: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MoveOutcome {
+    pub movement_remaining: u32,
+    pub captured_city: Option<City>,
+    pub eliminated_player: Option<String>,
 }
 
 // ============ Messages ============
@@ -383,6 +601,7 @@ pub enum ClientMessage {
     EndTurn { game_id: String, player_id: String },
     RejoinGame { game_id: String, player_id: String },
     MoveUnit { game_id: String, player_id: String, unit_id: String, to_q: i32, to_r: i32 },
+    AttackUnit { game_id: String, player_id: String, attacker_id: String, defender_id: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -399,6 +618,19 @@ pub enum ServerMessage {
     TurnChanged { current_turn: usize, player_times_ms: Vec<u64>, units: Vec<Unit> },
     TimeTick { player_index: usize, remaining_ms: u64 },
     UnitMoved { unit_id: String, to_q: i32, to_r: i32, movement_remaining: u32 },
+    CombatResult {
+        attacker_id: String,
+        defender_id: String,
+        attacker_hp: u32,
+        defender_hp: u32,
+        damage_to_attacker: u32,
+        damage_to_defender: u32,
+        attacker_died: bool,
+        defender_died: bool,
+    },
+    PlayerEliminated { player_id: String, conquerer_id: String },
+    CitiesCaptured { cities: Vec<City> },
+    GameOver { winner_id: String },
 }
 
 /// Terrain types for map tiles

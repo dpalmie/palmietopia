@@ -95,9 +95,18 @@ This coordinate system simplifies calculations for movement, distance, and neigh
 Cities are the foundation of each player's civilization.
 
 ### City Properties
-- Each player starts with **1 Capital city**
+- Each player starts with **1 Capitol city** (marked with a flag)
 - Cities can only be placed on **Grassland**, **Forest**, or **Desert** tiles
 - Cities **cannot** be placed on Water or Mountain tiles
+
+### Capitol Cities
+- The starting city is always the **Capitol**
+- Losing your Capitol means **elimination** from the game
+- When a Capitol is captured:
+  - The defending player is eliminated
+  - All their cities transfer to the conquerer
+  - All their units are removed from the game
+  - They can no longer take turns
 
 ### Starting Position Algorithm
 Players' starting cities are distributed evenly across the map:
@@ -116,9 +125,10 @@ The Conscript is the most basic military unit available at game start.
 
 | Stat | Value |
 |------|-------|
+| HP | 100 |
+| Attack | 20 |
+| Defense | 15 |
 | Movement | 2 tiles per turn |
-| Water | Cannot traverse |
-| Mountain | Costs 2 movement (rough terrain) |
 
 **Movement Rules:**
 - Each player starts with **1 Conscript** adjacent to their starting city
@@ -127,6 +137,60 @@ The Conscript is the most basic military unit available at game start.
 - Moving to Mountain costs **2 movement** (can only move 1 tile per turn on mountains)
 - **Cannot move to Water tiles** at all
 - Cannot move to tiles occupied by other units
+
+## Combat System
+
+Palmietopia uses a **Civilization V inspired** combat system where both attacker and defender deal damage to each other.
+
+### Combat Mechanics
+
+When Unit A attacks Unit B:
+1. **A deals damage to B**: `A.attack × 30 ÷ (30 + B.effective_defense)`
+2. **B counterattacks A**: `B.attack × 30 ÷ (30 + A.defense) × 0.5`
+3. If either unit reaches 0 HP, they are removed from the game
+4. If defender dies, attacker moves to their tile
+5. Attacking consumes **all remaining movement**
+
+### Garrison Bonus
+
+Units standing on a **friendly city** receive a **+50% defense bonus**:
+- Conscript base defense: 15
+- Conscript garrisoned defense: 22 (15 + 7)
+
+This makes defending cities significantly easier than attacking them.
+
+### Combat Example
+
+**Scenario:** Conscript A (100 HP, 20 ATK, 15 DEF) attacks Conscript B who is garrisoned (100 HP, 20 ATK, 22 effective DEF)
+
+1. A deals to B: `20 × 30 ÷ (30 + 22) = 11 damage`
+2. B counterattacks A: `20 × 30 ÷ (30 + 15) × 0.5 = 6 damage`
+3. **Result:** A has 94 HP, B has 89 HP
+
+### City Capture
+
+To capture an enemy city:
+
+**Undefended City:**
+- Simply move your unit onto the city tile
+- The city ownership transfers to you immediately
+
+**Defended City:**
+1. Attack and defeat the defending unit
+2. Your unit automatically moves to the city tile after killing the defender
+3. The city ownership transfers to you
+
+In both cases, if the captured city was their **Capitol**, the player is **eliminated**.
+
+## Victory Conditions
+
+The game ends when only **one player remains** (all others have been eliminated).
+
+A player is eliminated when:
+- Their **Capitol city** is captured by an enemy unit
+- All their cities and units are then transferred/removed
+
+The last remaining player wins the game and sees a **Victory screen**.
 
 ## Timer System
 
@@ -142,6 +206,7 @@ Palmietopia uses a **chess clock** style timer system:
 - Time only counts down during your turn
 - When you end your turn, you receive +45 seconds added to your remaining time
 - If your time runs out, your turn ends automatically
+- Eliminated players are skipped in turn order
 
 **Example:**
 1. Player starts turn with 2:00
@@ -163,4 +228,11 @@ Real-time game state synchronization via WebSocket connections. Messages include
 - Game start with initial state
 - Turn changes with timer updates
 - Unit movement broadcasts
+- Combat results with damage dealt
+- Player elimination notifications
+- Victory announcements
 
+### Player States
+- **Active**: Currently playing
+- **Eliminated**: Lost their Capitol, shown grayed out in player list
+- **Disconnected**: Can rejoin via the game URL

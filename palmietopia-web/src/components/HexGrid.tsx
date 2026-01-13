@@ -168,6 +168,8 @@ export function HexGrid({
               isSelected={unit.id === selectedUnitId}
               onClick={onUnitClick ? () => onUnitClick(unit.id) : undefined}
               movementRemaining={unit.movement_remaining}
+              hp={unit.hp ?? 100}
+              maxHp={unit.max_hp ?? 100}
             />
           ))}
         </svg>
