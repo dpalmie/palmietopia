@@ -28,6 +28,24 @@ function getAdjacentTiles(q: number, r: number): { q: number; r: number }[] {
   ];
 }
 
+// Get tiles within a given range
+function getTilesInRange(q: number, r: number, range: number): Array<[number, number]> {
+  const tiles: Array<[number, number]> = [];
+  for (let dq = -range; dq <= range; dq++) {
+    for (let dr = Math.max(-range, -dq - range); dr <= Math.min(range, -dq + range); dr++) {
+      tiles.push([q + dq, r + dr]);
+    }
+  }
+  return tiles;
+}
+
+const CITY_VISION_RANGE = 2;
+const VISION_RANGES: Record<string, number> = {
+  Conscript: 2,
+  Knight: 2,
+  Bowman: 3,
+};
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -318,6 +336,39 @@ export default function GamePage() {
   const myPlayerIdx = currentGame.players.findIndex(p => p.id === myPlayerId);
   const myGold = myPlayerIdx >= 0 ? (currentGame.player_gold?.[myPlayerIdx] ?? 0) : 0;
 
+  // Calculate visibility for current player
+  const visibleTiles = new Set<string>();
+  const exploredTiles = new Set<string>();
+  
+  if (myPlayerId && myPlayerIdx >= 0) {
+    // Add explored tiles from server state
+    const playerExplored = currentGame.explored_tiles?.[myPlayerIdx];
+    if (playerExplored) {
+      for (const [q, r] of playerExplored) {
+        exploredTiles.add(`${q},${r}`);
+      }
+    }
+    
+    // Calculate currently visible tiles from cities
+    for (const city of currentGame.cities || []) {
+      if (city.owner_id === myPlayerId) {
+        for (const [q, r] of getTilesInRange(city.q, city.r, CITY_VISION_RANGE)) {
+          visibleTiles.add(`${q},${r}`);
+        }
+      }
+    }
+    
+    // Calculate currently visible tiles from units
+    for (const unit of currentGame.units || []) {
+      if (unit.owner_id === myPlayerId) {
+        const range = VISION_RANGES[unit.unit_type] ?? 2;
+        for (const [q, r] of getTilesInRange(unit.q, unit.r, range)) {
+          visibleTiles.add(`${q},${r}`);
+        }
+      }
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col bg-zinc-900">
       <header className="p-4 bg-zinc-800 border-b border-zinc-700 flex items-center justify-between">
@@ -496,6 +547,8 @@ export default function GamePage() {
           selectedUnitId={selectedUnitId}
           selectedCityId={selectedCityId}
           highlightedTiles={highlightedTiles}
+          visibleTiles={visibleTiles}
+          exploredTiles={exploredTiles}
           onTileClick={handleTileClick}
           onUnitClick={handleUnitClick}
           onCityClick={handleCityClick}

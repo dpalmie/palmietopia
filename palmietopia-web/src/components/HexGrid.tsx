@@ -25,6 +25,8 @@ interface HexGridProps {
   selectedUnitId?: string | null;
   selectedCityId?: string | null;
   highlightedTiles?: { q: number; r: number }[];
+  visibleTiles?: Set<string>;  // "q,r" strings for visible tiles
+  exploredTiles?: Set<string>; // "q,r" strings for explored (but not visible) tiles
   onTileClick?: (q: number, r: number) => void;
   onUnitClick?: (unitId: string) => void;
   onCityClick?: (cityId: string) => void;
@@ -47,6 +49,8 @@ export function HexGrid({
   selectedUnitId,
   selectedCityId,
   highlightedTiles = [],
+  visibleTiles,
+  exploredTiles,
   onTileClick,
   onUnitClick,
   onCityClick,
@@ -72,6 +76,29 @@ export function HexGrid({
 
   const isHighlighted = (q: number, r: number): boolean => {
     return highlightedTiles.some(t => t.q === q && t.r === r);
+  };
+
+  // Determine visibility state: "visible" | "explored" | "unexplored"
+  const getVisibilityState = (q: number, r: number): "visible" | "explored" | "unexplored" => {
+    const key = `${q},${r}`;
+    if (visibleTiles?.has(key)) return "visible";
+    if (exploredTiles?.has(key)) return "explored";
+    // If no visibility data provided, treat as visible (backwards compatibility)
+    if (!visibleTiles && !exploredTiles) return "visible";
+    return "unexplored";
+  };
+
+  // Check if a unit should be visible
+  const isUnitVisible = (unit: UnitType): boolean => {
+    if (!visibleTiles) return true; // No fog if no visibility data
+    return visibleTiles.has(`${unit.q},${unit.r}`);
+  };
+
+  // Check if a city should be visible (cities are visible once explored)
+  const isCityVisible = (city: CityType): boolean => {
+    if (!visibleTiles && !exploredTiles) return true; // No fog
+    const key = `${city.q},${city.r}`;
+    return visibleTiles?.has(key) || exploredTiles?.has(key) || false;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -145,11 +172,12 @@ export function HexGrid({
               onClick={onTileClick ? () => onTileClick(tile.q, tile.r) : undefined}
               isHighlighted={isHighlighted(tile.q, tile.r)}
               isSelected={false}
+              visibilityState={getVisibilityState(tile.q, tile.r)}
             />
           ))}
           
-          {/* Render cities */}
-          {cities.map((city) => (
+          {/* Render cities (only if explored) */}
+          {cities.filter(isCityVisible).map((city) => (
             <City
               key={`city-${city.id}`}
               q={city.q}
@@ -159,11 +187,12 @@ export function HexGrid({
               name={city.name}
               isSelected={city.id === selectedCityId}
               onClick={onCityClick ? () => onCityClick(city.id) : undefined}
+              dimmed={!visibleTiles?.has(`${city.q},${city.r}`)}
             />
           ))}
           
-          {/* Render units */}
-          {units.map((unit) => (
+          {/* Render units (only if visible) */}
+          {units.filter(isUnitVisible).map((unit) => (
             <Unit
               key={`unit-${unit.id}`}
               q={unit.q}

@@ -75,12 +75,14 @@ impl GameManager {
             active_game.game.current_turn, active_game.game.player_times_ms);
 
         // Broadcast turn change to all subscribed clients
+        // Visibility is calculated client-side using explored_tiles from GameSession
         let msg = ServerMessage::TurnChanged {
             current_turn: active_game.game.current_turn,
             player_times_ms: active_game.game.player_times_ms.clone(),
             player_gold: active_game.game.player_gold.clone(),
             units: active_game.game.units.clone(),
             cities: active_game.game.cities.clone(),
+            explored_tiles: active_game.game.explored_tiles.clone(),
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
@@ -118,12 +120,13 @@ impl GameManager {
         // Perform the move (validates and updates position, may capture city)
         let outcome = active_game.game.move_unit(unit_id, to_q, to_r)?;
 
-        // Broadcast the move to all players
+        // Broadcast the move to all players (includes updated exploration)
         let msg = ServerMessage::UnitMoved {
             unit_id: unit_id.to_string(),
             to_q,
             to_r,
             movement_remaining: outcome.movement_remaining,
+            explored_tiles: active_game.game.explored_tiles.clone(),
         };
         let _ = active_game.channel.send(serde_json::to_string(&msg).unwrap());
 
@@ -356,6 +359,7 @@ async fn run_game_timer(game_id: String, games: Arc<RwLock<HashMap<String, Activ
                         player_gold: active_game.game.player_gold.clone(),
                         units: active_game.game.units.clone(),
                         cities: active_game.game.cities.clone(),
+                        explored_tiles: active_game.game.explored_tiles.clone(),
                     };
                     let _ = active_game.channel.send(serde_json::to_string(&turn_msg).unwrap());
                 }

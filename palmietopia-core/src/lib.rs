@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[wasm_bindgen]
 pub fn get_welcome_message() -> String {
@@ -158,6 +159,14 @@ impl UnitType {
             UnitType::Bowman => 2,
         }
     }
+
+    pub fn vision_range(&self) -> i32 {
+        match self {
+            UnitType::Conscript => 2,
+            UnitType::Knight => 2,
+            UnitType::Bowman => 3,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -222,10 +231,13 @@ pub struct GameSession {
     pub eliminated_players: Vec<String>,
     pub player_times_ms: Vec<u64>,
     pub player_gold: Vec<u64>,
+    pub explored_tiles: Vec<HashSet<(i32, i32)>>,  // Per-player explored tiles
     pub turn_started_at_ms: u64,
     pub base_time_ms: u64,
     pub increment_ms: u64,
 }
+
+pub const CITY_VISION_RANGE: i32 = 2;
 
 impl GameSession {
     pub fn from_lobby(lobby: &Lobby) -> Self {
@@ -263,7 +275,10 @@ impl GameSession {
             }
         }
         
-        Self {
+        // Initialize explored tiles for each player
+        let explored_tiles: Vec<HashSet<(i32, i32)>> = vec![HashSet::new(); player_count];
+        
+        let mut session = Self {
             id: lobby.id.clone(),
             map,
             players: lobby.players.clone(),
@@ -274,10 +289,18 @@ impl GameSession {
             eliminated_players: Vec::new(),
             player_times_ms: vec![DEFAULT_BASE_TIME_MS; player_count],
             player_gold: vec![STARTING_GOLD; player_count],
+            explored_tiles,
             turn_started_at_ms: 0,
             base_time_ms: DEFAULT_BASE_TIME_MS,
             increment_ms: DEFAULT_INCREMENT_MS,
+        };
+        
+        // Initialize exploration for all players based on starting positions
+        for player in &lobby.players {
+            session.update_exploration(&player.id);
         }
+        
+        session
     }
 
     fn calculate_starting_positions(map: &GameMap, player_count: usize) -> Vec<(i32, i32)> {
@@ -321,6 +344,81 @@ impl GameSession {
 
     pub fn hex_distance(q1: i32, r1: i32, q2: i32, r2: i32) -> i32 {
         ((q1 - q2).abs() + (r1 - r2).abs() + (q1 + r1 - q2 - r2).abs()) / 2
+    }
+
+    /// Get all tiles within a given range from a position
+    fn tiles_in_range(q: i32, r: i32, range: i32) -> Vec<(i32, i32)> {
+        let mut tiles = Vec::new();
+        for dq in -range..=range {
+            for dr in (-range).max(-dq - range)..=(range).min(-dq + range) {
+                tiles.push((q + dq, r + dr));
+            }
+        }
+        tiles
+    }
+
+    /// Calculate all currently visible tiles for a player
+    pub fn get_visible_tiles(&self, player_id: &str) -> HashSet<(i32, i32)> {
+        let mut visible = HashSet::new();
+        
+        // Vision from cities owned by player
+        for city in &self.cities {
+            if city.owner_id == player_id {
+                for (tq, tr) in Self::tiles_in_range(city.q, city.r, CITY_VISION_RANGE) {
+                    if self.map.tiles.iter().any(|t| t.q == tq && t.r == tr) {
+                        visible.insert((tq, tr));
+                    }
+                }
+            }
+        }
+        
+        // Vision from units owned by player
+        for unit in &self.units {
+            if unit.owner_id == player_id {
+                let vision = unit.unit_type.vision_range();
+                for (tq, tr) in Self::tiles_in_range(unit.q, unit.r, vision) {
+                    if self.map.tiles.iter().any(|t| t.q == tq && t.r == tr) {
+                        visible.insert((tq, tr));
+                    }
+                }
+            }
+        }
+        
+        visible
+    }
+
+    /// Update explored tiles for a player (adds current visible tiles to explored)
+    pub fn update_exploration(&mut self, player_id: &str) {
+        let player_idx = self.players.iter().position(|p| p.id == player_id);
+        if let Some(idx) = player_idx {
+            let visible = self.get_visible_tiles(player_id);
+            self.explored_tiles[idx].extend(visible);
+        }
+    }
+
+    /// Get explored tiles for a player
+    pub fn get_explored_tiles(&self, player_id: &str) -> HashSet<(i32, i32)> {
+        let player_idx = self.players.iter().position(|p| p.id == player_id);
+        if let Some(idx) = player_idx {
+            self.explored_tiles[idx].clone()
+        } else {
+            HashSet::new()
+        }
+    }
+
+    /// Check if a tile is visible to a player
+    pub fn is_tile_visible(&self, player_id: &str, q: i32, r: i32) -> bool {
+        self.get_visible_tiles(player_id).contains(&(q, r))
+    }
+
+    /// Check if a tile is explored by a player
+    pub fn is_tile_explored(&self, player_id: &str, q: i32, r: i32) -> bool {
+        let player_idx = self.players.iter().position(|p| p.id == player_id);
+        if let Some(idx) = player_idx {
+            self.explored_tiles[idx].contains(&(q, r))
+        } else {
+            false
+        }
     }
 
     pub fn get_terrain_at(&self, q: i32, r: i32) -> Option<Terrain> {
@@ -377,6 +475,9 @@ impl GameSession {
         unit.r = to_r;
         unit.movement_remaining -= cost;
         let movement_remaining = unit.movement_remaining;
+        
+        // Update exploration for the player (unit moved, may reveal new tiles)
+        self.update_exploration(&attacker_owner);
         
         // Check for city capture
         let (captured_city, eliminated_player) = self.try_capture_city(to_q, to_r, &attacker_owner);
@@ -729,9 +830,9 @@ pub enum ServerMessage {
     GameRejoined { game: GameSession },
     PlayerLeft { player_id: String },
     Error { message: String },
-    TurnChanged { current_turn: usize, player_times_ms: Vec<u64>, player_gold: Vec<u64>, units: Vec<Unit>, cities: Vec<City> },
+    TurnChanged { current_turn: usize, player_times_ms: Vec<u64>, player_gold: Vec<u64>, units: Vec<Unit>, cities: Vec<City>, explored_tiles: Vec<HashSet<(i32, i32)>> },
     TimeTick { player_index: usize, remaining_ms: u64 },
-    UnitMoved { unit_id: String, to_q: i32, to_r: i32, movement_remaining: u32 },
+    UnitMoved { unit_id: String, to_q: i32, to_r: i32, movement_remaining: u32, explored_tiles: Vec<HashSet<(i32, i32)>> },
     CombatResult {
         attacker_id: String,
         defender_id: String,

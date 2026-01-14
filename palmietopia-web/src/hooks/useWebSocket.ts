@@ -61,6 +61,7 @@ export interface GameSession {
   eliminated_players: string[];
   player_times_ms: number[];
   player_gold: number[];
+  explored_tiles: Array<Array<[number, number]>>;  // Per-player explored tiles
   turn_started_at_ms: number;
   base_time_ms: number;
   increment_ms: number;
@@ -75,9 +76,9 @@ export type ServerMessage =
   | { type: "GameRejoined"; game: GameSession }
   | { type: "PlayerLeft"; player_id: string }
   | { type: "Error"; message: string }
-  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; player_gold: number[]; units: Unit[]; cities: City[] }
+  | { type: "TurnChanged"; current_turn: number; player_times_ms: number[]; player_gold: number[]; units: Unit[]; cities: City[]; explored_tiles: Array<Array<[number, number]>> }
   | { type: "TimeTick"; player_index: number; remaining_ms: number }
-  | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number }
+  | { type: "UnitMoved"; unit_id: string; to_q: number; to_r: number; movement_remaining: number; explored_tiles: Array<Array<[number, number]>> }
   | { type: "CombatResult"; attacker_id: string; defender_id: string; attacker_hp: number; defender_hp: number; damage_to_attacker: number; damage_to_defender: number; attacker_died: boolean; defender_died: boolean; attacker_new_q: number | null; attacker_new_r: number | null }
   | { type: "PlayerEliminated"; player_id: string; conquerer_id: string }
   | { type: "CitiesCaptured"; cities: City[] }
@@ -180,6 +181,7 @@ export function useWebSocket() {
                 player_gold: msg.player_gold,
                 units: msg.units,
                 cities: msg.cities,
+                explored_tiles: msg.explored_tiles,
                 turn_started_at_ms: Date.now(),
               } : null
             );
@@ -205,6 +207,7 @@ export function useWebSocket() {
                     ? { ...u, q: msg.to_q, r: msg.to_r, movement_remaining: msg.movement_remaining }
                     : u
                 ),
+                explored_tiles: msg.explored_tiles,
               };
             });
             break;

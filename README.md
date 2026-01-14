@@ -288,6 +288,42 @@ Palmietopia uses a **chess clock** style timer system:
 3. Receives +45 second increment
 4. Next turn starts with 2:15 in bank
 
+## Fog of War
+
+Palmietopia features a fog of war system that limits visibility to areas around your units and cities.
+
+### Tile States
+
+| State | Description | Visual |
+|-------|-------------|--------|
+| **Visible** | Currently in vision range | Full terrain with decorations |
+| **Explored** | Previously seen | Dimmed terrain, no decorations |
+| **Unexplored** | Never seen | Black/hidden |
+
+### Vision Ranges
+
+| Source | Vision Range |
+|--------|--------------|
+| City | 2 tiles |
+| Conscript | 2 tiles |
+| Knight | 2 tiles |
+| Bowman | 3 tiles |
+
+### Visibility Rules
+
+- **Terrain**: Once explored, terrain is always visible (dimmed in fog)
+- **Enemy Cities**: Visible once discovered, remain visible even in fog
+- **Enemy Units**: Only visible when in current vision range
+- **Movement**: You can move into fog or unexplored tiles
+- **Attacks**: Cannot attack units you can't see
+
+### Strategic Implications
+
+- **Scouting**: Bowmen have extended vision (3 tiles) making them excellent scouts
+- **Ambushes**: Enemy units in fog are hidden until you move close
+- **City Defense**: Cities provide vision, helping protect your territory
+- **Exploration**: Moving units reveals the map permanently
+
 ## Multiplayer
 
 ### Lobby System

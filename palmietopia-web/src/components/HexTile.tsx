@@ -6,6 +6,7 @@ interface HexTileProps {
   onClick?: () => void;
   isHighlighted?: boolean;
   isSelected?: boolean;
+  visibilityState?: "visible" | "explored" | "unexplored";
 }
 
 const TERRAIN_COLORS: Record<string, string> = {
@@ -24,7 +25,7 @@ const TERRAIN_DARK: Record<string, string> = {
   Desert: "#E65100",
 };
 
-export function HexTile({ q, r, terrain, size, onClick, isHighlighted, isSelected }: HexTileProps) {
+export function HexTile({ q, r, terrain, size, onClick, isHighlighted, isSelected, visibilityState = "visible" }: HexTileProps) {
   const x = size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
   const y = size * ((3 / 2) * r);
 
@@ -169,8 +170,25 @@ export function HexTile({ q, r, terrain, size, onClick, isHighlighted, isSelecte
     }
   };
 
+  // For unexplored tiles, render as black
+  if (visibilityState === "unexplored") {
+    return (
+      <g>
+        <polygon
+          points={points.join(" ")}
+          fill="#0a0a0a"
+          stroke="#000"
+          strokeWidth="1"
+        />
+      </g>
+    );
+  }
+
+  // For explored (fog) tiles, render dimmed terrain without decorations
+  const opacity = visibilityState === "explored" ? 0.4 : 1;
+
   return (
-    <g onClick={onClick} style={{ cursor: onClick ? "pointer" : "default" }}>
+    <g onClick={onClick} style={{ cursor: onClick ? "pointer" : "default", opacity }}>
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor={color} />
@@ -186,7 +204,7 @@ export function HexTile({ q, r, terrain, size, onClick, isHighlighted, isSelecte
         className="transition-all hover:brightness-110"
       />
       
-      {renderTerrainDecoration()}
+      {visibilityState === "visible" && renderTerrainDecoration()}
       
       <line
         x1={points[4].split(",")[0]}

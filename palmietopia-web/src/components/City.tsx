@@ -6,9 +6,10 @@ interface CityProps {
   name: string;
   isSelected?: boolean;
   onClick?: () => void;
+  dimmed?: boolean;
 }
 
-export function City({ q, r, size, ownerColor, name, isSelected, onClick }: CityProps) {
+export function City({ q, r, size, ownerColor, name, isSelected, onClick, dimmed }: CityProps) {
   const x = size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
   const y = size * ((3 / 2) * r);
   
@@ -18,6 +19,7 @@ export function City({ q, r, size, ownerColor, name, isSelected, onClick }: City
     <g 
       className={onClick ? "cursor-pointer" : "pointer-events-none"}
       onClick={onClick}
+      style={{ opacity: dimmed ? 0.4 : 1 }}
     >
       {/* Selection ring */}
       {isSelected && (

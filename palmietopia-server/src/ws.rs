@@ -324,6 +324,7 @@ async fn handle_client_message(
                         player_gold: game.player_gold.clone(),
                         units: game.units.clone(),
                         cities: game.cities.clone(),
+                        explored_tiles: game.explored_tiles.clone(),
                     })
                 }
                 Err(e) => {
@@ -370,13 +371,8 @@ async fn handle_client_message(
             match state.game_manager.move_unit(&game_id, &msg_player_id, &unit_id, to_q, to_r).await {
                 Ok(outcome) => {
                     tracing::info!("MoveUnit succeeded, movement_remaining={}", outcome.movement_remaining);
-                    // Server already broadcasts via channel, return message for this client
-                    Some(ServerMessage::UnitMoved {
-                        unit_id,
-                        to_q,
-                        to_r,
-                        movement_remaining: outcome.movement_remaining,
-                    })
+                    // Server already broadcasts via channel with explored_tiles, return None to avoid duplicate
+                    None
                 }
                 Err(e) => {
                     tracing::error!("MoveUnit failed: {}", e);
