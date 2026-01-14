@@ -323,6 +323,13 @@ async fn run_game_timer(game_id: String, games: Arc<RwLock<HashMap<String, Activ
         {
             let mut games_lock = games.write().await;
             if let Some(active_game) = games_lock.get_mut(&game_id) {
+                // Stop timer if game is over
+                if let palmietopia_core::GameStatus::Victory { .. } = active_game.game.status {
+                    tracing::info!("Game {} ended (victory), stopping timer and cleaning up", game_id);
+                    games_lock.remove(&game_id);
+                    break;
+                }
+
                 let now = current_time_ms();
                 let elapsed = now.saturating_sub(active_game.game.turn_started_at_ms);
                 let current_player_time = active_game.game.current_player_time();
