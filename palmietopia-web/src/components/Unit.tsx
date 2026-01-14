@@ -216,6 +216,82 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
     </g>
   );
 
+  const renderExplorer = () => (
+    <g>
+      {/* Body - lighter clothes */}
+      <ellipse
+        cx={x}
+        cy={y + s * 0.2}
+        rx={s * 0.45}
+        ry={s * 0.65}
+        fill="#8B7355"
+        stroke={ownerColor}
+        strokeWidth={isSelected ? "3" : "2"}
+      />
+      {/* Head */}
+      <circle
+        cx={x}
+        cy={y - s * 0.45}
+        r={s * 0.28}
+        fill="#D2B48C"
+        stroke={ownerColor}
+        strokeWidth="1.5"
+      />
+      {/* Hat/cap */}
+      <ellipse
+        cx={x}
+        cy={y - s * 0.6}
+        rx={s * 0.32}
+        ry={s * 0.15}
+        fill="#5D4037"
+      />
+      {/* Hat brim */}
+      <ellipse
+        cx={x}
+        cy={y - s * 0.52}
+        rx={s * 0.38}
+        ry={s * 0.08}
+        fill="#5D4037"
+      />
+      {/* Spyglass */}
+      <line
+        x1={x + s * 0.2}
+        y1={y - s * 0.3}
+        x2={x + s * 0.7}
+        y2={y - s * 0.5}
+        stroke="#654321"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      {/* Spyglass lens */}
+      <circle
+        cx={x + s * 0.75}
+        cy={y - s * 0.55}
+        r={s * 0.12}
+        fill="#87CEEB"
+        stroke="#654321"
+        strokeWidth="2"
+      />
+      {/* Backpack */}
+      <rect
+        x={x - s * 0.55}
+        y={y - s * 0.1}
+        width={s * 0.25}
+        height={s * 0.5}
+        fill="#6B4423"
+        rx="2"
+      />
+      {/* Owner color badge */}
+      <circle
+        cx={x}
+        cy={y + s * 0.3}
+        r={s * 0.12}
+        fill={ownerColor}
+        opacity="0.9"
+      />
+    </g>
+  );
+
   return (
     <g 
       onClick={onClick} 
@@ -238,6 +314,7 @@ export function Unit({ q, r, size, ownerColor, unitType, isSelected, onClick, mo
       {unitType === "Conscript" && renderConscript()}
       {unitType === "Knight" && renderKnight()}
       {unitType === "Bowman" && renderBowman()}
+      {unitType === "Explorer" && renderExplorer()}
       
       {/* HP Bar */}
       <g transform={`translate(${x - s * 0.8}, ${y - s * 1.8})`}>

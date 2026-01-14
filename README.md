@@ -145,21 +145,32 @@ Each city can produce **1 unit per turn**:
 
 | Unit | Cost |
 |------|------|
+| Explorer | 15 gold |
 | Conscript | 25 gold |
-| Knight | 40 gold |
 | Bowman | 25 gold |
+| Knight | 40 gold |
 
 **Strategic Note:** Since units start in your Capitol, you must move your starting unit out before you can produce more. This creates an early-game decision between defending (garrisoned unit) and expanding (producing more units).
 
 ## Units
 
-Palmietopia features three unit types with distinct roles and stats:
+Palmietopia features four unit types with distinct roles and stats:
 
-| Unit | Cost | HP | Attack | Defense | Movement | Range |
-|------|------|-----|--------|---------|----------|-------|
-| Conscript | 25g | 50 | 25 | 15 | 2 | 1 |
-| Knight | 40g | 50 | 35 | 10 | 3 | 1 |
-| Bowman | 25g | 40 | 22 | 10 | 2 | 2 |
+| Unit | Cost | HP | Attack | Defense | Movement | Vision | Range |
+|------|------|-----|--------|---------|----------|--------|-------|
+| Explorer | 15g | 25 | 10 | 5 | 3 | 4 | 1 |
+| Conscript | 25g | 50 | 25 | 15 | 2 | 2 | 1 |
+| Bowman | 25g | 40 | 22 | 10 | 2 | 3 | 2 |
+| Knight | 40g | 50 | 35 | 10 | 3 | 2 | 1 |
+
+### Explorer (Scout)
+
+The Explorer is a cheap, fragile scout with the best vision in the game.
+
+- **Role:** Map exploration, early scouting
+- **Vision:** 4 tiles - best in game for revealing fog of war
+- **Movement:** 3 tiles - fast for covering ground
+- **Tradeoff:** Very weak (25 HP, 10 ATK, 5 DEF) - dies in 2 hits from anything
 
 ### Conscript (Basic Infantry)
 
@@ -308,6 +319,7 @@ Palmietopia features a fog of war system that limits visibility to areas around 
 | Conscript | 2 tiles |
 | Knight | 2 tiles |
 | Bowman | 3 tiles |
+| Explorer | 4 tiles |
 
 ### Visibility Rules
 

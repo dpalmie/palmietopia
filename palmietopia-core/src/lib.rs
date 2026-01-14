@@ -124,6 +124,7 @@ pub enum UnitType {
     Conscript,
     Knight,
     Bowman,
+    Explorer,
 }
 
 impl UnitType {
@@ -132,6 +133,7 @@ impl UnitType {
             UnitType::Conscript => 2,
             UnitType::Knight => 3,
             UnitType::Bowman => 2,
+            UnitType::Explorer => 3,
         }
     }
 
@@ -141,6 +143,7 @@ impl UnitType {
             UnitType::Conscript => (50, 25, 15),
             UnitType::Knight => (50, 35, 10),
             UnitType::Bowman => (40, 22, 10),
+            UnitType::Explorer => (25, 10, 5),
         }
     }
 
@@ -149,6 +152,7 @@ impl UnitType {
             UnitType::Conscript => 25,
             UnitType::Knight => 40,
             UnitType::Bowman => 25,
+            UnitType::Explorer => 15,
         }
     }
 
@@ -157,6 +161,7 @@ impl UnitType {
             UnitType::Conscript => 1,
             UnitType::Knight => 1,
             UnitType::Bowman => 2,
+            UnitType::Explorer => 1,
         }
     }
 
@@ -165,6 +170,7 @@ impl UnitType {
             UnitType::Conscript => 2,
             UnitType::Knight => 2,
             UnitType::Bowman => 3,
+            UnitType::Explorer => 4,
         }
     }
 }

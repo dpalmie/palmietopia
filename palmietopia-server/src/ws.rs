@@ -433,6 +433,7 @@ async fn handle_client_message(
                 "Conscript" => palmietopia_core::UnitType::Conscript,
                 "Knight" => palmietopia_core::UnitType::Knight,
                 "Bowman" => palmietopia_core::UnitType::Bowman,
+                "Explorer" => palmietopia_core::UnitType::Explorer,
                 _ => return Some(ServerMessage::Error { message: "Invalid unit type".to_string() }),
             };
             

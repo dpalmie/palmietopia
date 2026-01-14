@@ -54,10 +54,11 @@ export const PLAYER_COLORS: Record<string, string> = {
   Purple: "#A855F7",
 };
 
-export type UnitType = "Conscript" | "Knight" | "Bowman";
+export type UnitType = "Conscript" | "Knight" | "Bowman" | "Explorer";
 
-export const UNIT_STATS: Record<UnitType, { cost: number; hp: number; attack: number; defense: number; movement: number; range: number }> = {
-  Conscript: { cost: 25, hp: 50, attack: 25, defense: 15, movement: 2, range: 1 },
-  Knight: { cost: 40, hp: 50, attack: 35, defense: 10, movement: 3, range: 1 },
-  Bowman: { cost: 25, hp: 40, attack: 22, defense: 10, movement: 2, range: 2 },
+export const UNIT_STATS: Record<UnitType, { cost: number; hp: number; attack: number; defense: number; movement: number; range: number; vision: number }> = {
+  Conscript: { cost: 25, hp: 50, attack: 25, defense: 15, movement: 2, range: 1, vision: 2 },
+  Knight: { cost: 40, hp: 50, attack: 35, defense: 10, movement: 3, range: 1, vision: 2 },
+  Bowman: { cost: 25, hp: 40, attack: 22, defense: 10, movement: 2, range: 2, vision: 3 },
+  Explorer: { cost: 15, hp: 25, attack: 10, defense: 5, movement: 3, range: 1, vision: 4 },
 };

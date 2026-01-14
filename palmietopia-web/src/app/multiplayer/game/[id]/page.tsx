@@ -44,6 +44,7 @@ const VISION_RANGES: Record<string, number> = {
   Conscript: 2,
   Knight: 2,
   Bowman: 3,
+  Explorer: 4,
 };
 
 export default function GamePage() {
@@ -519,6 +520,17 @@ export default function GamePage() {
                   }`}
                 >
                   Buy Bowman ({UNIT_STATS.Bowman.cost}g)
+                </button>
+                <button
+                  onClick={() => handleBuyUnit("Explorer")}
+                  disabled={myGold < UNIT_STATS.Explorer.cost}
+                  className={`px-3 py-1 rounded text-white text-sm font-medium transition-colors ${
+                    myGold >= UNIT_STATS.Explorer.cost 
+                      ? "bg-cyan-600 hover:bg-cyan-500" 
+                      : "bg-zinc-600 cursor-not-allowed opacity-50"
+                  }`}
+                >
+                  Buy Explorer ({UNIT_STATS.Explorer.cost}g)
                 </button>
               </>
             )}
