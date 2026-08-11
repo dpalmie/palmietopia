@@ -1,0 +1,15 @@
+{
+  "name": "Palmietopia",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "server",
+      "command": "cd palmietopia-server && cargo run"
+    },
+    {
+      "name": "web",
+      "command": "cd palmietopia-web && npm run dev"
+    }
+  ]
+}
